@@ -1,6 +1,6 @@
 Name:           jss
 Version:        4.2.6
-Release:        15%{?dist}
+Release:        20%{?dist}
 Summary:        Java Security Services (JSS)
 
 Group:          System Environment/Libraries
@@ -32,7 +32,12 @@ Patch7:         jss-ECC_keygen_byCurveName.patch
 Patch8:         jss-VerifyCertificate.patch
 Patch9:         jss-bad-error-string-pointer.patch
 Patch10:        jss-VerifyCertificateReturnCU.patch
-Patch11:        jss-slots-not-freed.patch
+#Patch11:        jss-slots-not-freed.patch
+Patch12:        jss-ECC-HSM-FIPS.patch
+Patch13:        jss-eliminate-native-compiler-warnings.patch
+Patch14:        jss-eliminate-java-compiler-warnings.patch
+Patch15:        jss-PKCS12-FIPS.patch
+Patch16:        jss-eliminate-native-coverity-defects.patch
 
 
 %description
@@ -60,7 +65,12 @@ This package contains the API documentation for JSS.
 %patch8 -p1
 %patch9 -p1
 %patch10 -p1
-%patch11 -p1
+#%patch11 -p1
+%patch12 -p1
+%patch13 -p1
+%patch14 -p1
+%patch15 -p1
+%patch16 -p1
 
 %build
 [ -z "$JAVA_HOME" ] && export JAVA_HOME=%{_jvmdir}/java
@@ -144,6 +154,25 @@ rm -rf $RPM_BUILD_ROOT
 
 
 %changelog
+* Mon Sep 19 2011 Matthew Harmsen <mharmsen@redhat.com> - 4.2.6-20
+- Bugzilla Bug #715621 - Defects revealed by Coverity scan
+
+* Mon Aug 15 2011 Christina Fu <cfu@redhat.com> - 4.2.6-19
+- Bugzilla Bug 733551 - DRM failed to recovery keys when in FIPS mode
+  (HSM + NSS)
+
+* Fri Aug 12 2011 Matthew Harmsen <mharmsen@redhat.com> - 4.2.6-18
+- Bugzilla Bug #660436 - Warnings should be cleaned up in JSS build
+  (jdennis, mharmsen)
+
+* Wed May 18 2011 Christina Fu <cfu@redhat.com> - 4.2.6-17
+- Bug 670980 - Cannot create system certs when using LunaSA HSM in FIPS Mode
+  and ECC algorithms (support tokens that don't do ECDH)
+
+* Fri Apr 08 2011 Jack Magne <jmagne@redhat.com> - 4.2.6-16
+- bug 694661 - TKS instance crash during token enrollment.
+  Back out of previous patch for #676083.
+
 * Wed Feb 23 2011 Andrew Wnuk <awnuk@redhat.com> - 4.2.6-15
 - bug 676083 - JSS: slots not freed
 
