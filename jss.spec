@@ -1,6 +1,6 @@
 Name:           jss
 Version:        4.2.6
-Release:        22%{?dist}
+Release:        24%{?dist}
 Summary:        Java Security Services (JSS)
 
 Group:          System Environment/Libraries
@@ -41,7 +41,9 @@ Patch16:        jss-eliminate-native-coverity-defects.patch
 Patch17:        jss-PBE-PKCS5-V2-secure-P12.patch
 Patch18:        jss-wrapInToken.patch
 Patch19:        jss-HSM-manufacturerID.patch
-
+Patch20:        jss-ECC-Phase2KeyArchivalRecovery.patch
+Patch21:        jss-undo-JCA-deprecations.patch
+Patch22:        jss-undo-BadPaddingException-deprecation.patch
 
 %description
 Java Security Services (JSS) is a java native interface which provides a bridge
@@ -77,6 +79,9 @@ This package contains the API documentation for JSS.
 %patch17 -p1
 %patch18 -p1
 %patch19 -p1
+%patch20 -p1
+%patch21 -p1
+%patch22 -p1
 
 %build
 [ -z "$JAVA_HOME" ] && export JAVA_HOME=%{_jvmdir}/java
@@ -160,6 +165,16 @@ rm -rf $RPM_BUILD_ROOT
 
 
 %changelog
+* Fri Mar 30 2012 Matthew Harmsen <mharmsen@redhat.com> - 4.2.6-24
+- Bugzilla Bug #797353 - Un-deprecate previously deprecated methods in
+  JSS 4.2.6 . . . BadPaddingException (mharmsen)
+
+* Tue Mar 20 2012 Christina Fu <cfu@redhat.com> - 4.2.6-23
+- Bugzilla Bug #804838 - [RFE] ECC encryption keys cannot be archived
+  ECC phase2 work - support for ECC encryption key archival and recovery (cfu)
+- Bugzilla Bug #797352 - Un-deprecate previously deprecated methods in
+  JSS 4.2.6 . . . (mharmsen)
+
 * Thu Nov 10 2011 Christina Fu <cfu@redhat.com> - 4.2.6-22
 - Bugzilla Bug #752880 - JSS - HSM token name was mistaken for manufacturer
   identifier
