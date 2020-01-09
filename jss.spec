@@ -1,6 +1,6 @@
 Name:           jss
 Version:        4.2.6
-Release:        20%{?dist}
+Release:        22%{?dist}
 Summary:        Java Security Services (JSS)
 
 Group:          System Environment/Libraries
@@ -38,6 +38,9 @@ Patch13:        jss-eliminate-native-compiler-warnings.patch
 Patch14:        jss-eliminate-java-compiler-warnings.patch
 Patch15:        jss-PKCS12-FIPS.patch
 Patch16:        jss-eliminate-native-coverity-defects.patch
+Patch17:        jss-PBE-PKCS5-V2-secure-P12.patch
+Patch18:        jss-wrapInToken.patch
+Patch19:        jss-HSM-manufacturerID.patch
 
 
 %description
@@ -71,6 +74,9 @@ This package contains the API documentation for JSS.
 %patch14 -p1
 %patch15 -p1
 %patch16 -p1
+%patch17 -p1
+%patch18 -p1
+%patch19 -p1
 
 %build
 [ -z "$JAVA_HOME" ] && export JAVA_HOME=%{_jvmdir}/java
@@ -154,6 +160,17 @@ rm -rf $RPM_BUILD_ROOT
 
 
 %changelog
+* Thu Nov 10 2011 Christina Fu <cfu@redhat.com> - 4.2.6-22
+- Bugzilla Bug #752880 - JSS - HSM token name was mistaken for manufacturer
+  identifier
+
+* Wed Oct 19 2011 Christina Fu <cfu@redhat.com> - 4.2.6-21
+- Bugzilla Bug #737122 - DRM: during archiving and recovering, wrapping
+  unwrapping keys should be done in the token
+- support for PKCS5v2; support for secure PKCS12
+- Bugzilla Bug #744797 - KRA key recovery (retrieve pkcs#12) fails after the
+  in-place upgrade( CS 8.0->8.1)
+
 * Mon Sep 19 2011 Matthew Harmsen <mharmsen@redhat.com> - 4.2.6-20
 - Bugzilla Bug #715621 - Defects revealed by Coverity scan
 
