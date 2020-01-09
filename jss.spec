@@ -1,6 +1,6 @@
 Name:           jss
 Version:        4.2.6
-Release:        24%{?dist}
+Release:        35%{?dist}
 Summary:        Java Security Services (JSS)
 
 Group:          System Environment/Libraries
@@ -10,10 +10,10 @@ URL:            http://www.mozilla.org/projects/security/pki/jss/
 # following commands to generate the tarball:
 # cvs -d :pserver:anonymous@cvs-mirror.mozilla.org:/cvsroot export -r JSS_4_2_6_RTM -d jss-4.2.6 -N mozilla/security/coreconf mozilla/security/jss
 # tar -czvf jss-4.2.6.tar.gz jss-4.2.6
-Source0:        %{name}-%{version}.tar.gz
-Source1:        MPL-1.1.txt
-Source2:        gpl.txt
-Source3:        lgpl.txt
+Source0:        http://pki.fedoraproject.org/pki/sources/%{name}/%{name}-%{version}-%{release}/%{name}-%{version}.tar.gz
+Source1:        http://pki.fedoraproject.org/pki/sources/%{name}/%{name}-%{version}-%{release}/MPL-1.1.txt
+Source2:        http://pki.fedoraproject.org/pki/sources/%{name}/%{name}-%{version}-%{release}/gpl.txt
+Source3:        http://pki.fedoraproject.org/pki/sources/%{name}/%{name}-%{version}-%{release}/lgpl.txt
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
 BuildRequires:  nss-devel >= 3.12.3.99
@@ -44,6 +44,10 @@ Patch19:        jss-HSM-manufacturerID.patch
 Patch20:        jss-ECC-Phase2KeyArchivalRecovery.patch
 Patch21:        jss-undo-JCA-deprecations.patch
 Patch22:        jss-undo-BadPaddingException-deprecation.patch
+Patch23:        jss-fixed-build-issue-on-F17-or-newer.patch
+Patch24:        jss-SHA-OID-fix.patch
+Patch25:        jss-RC4-strengh-verify.patch
+Patch26:        jss-support-TLS1_1-TLS1_2.patch
 
 %description
 Java Security Services (JSS) is a java native interface which provides a bridge
@@ -82,6 +86,10 @@ This package contains the API documentation for JSS.
 %patch20 -p1
 %patch21 -p1
 %patch22 -p1
+%patch23 -p1
+%patch24 -p1
+%patch25 -p1
+%patch26 -p1
 
 %build
 [ -z "$JAVA_HOME" ] && export JAVA_HOME=%{_jvmdir}/java
@@ -111,9 +119,20 @@ export NSPR_LIB_DIR
 export NSS_INCLUDE_DIR
 export NSS_LIB_DIR
 
-%ifarch x86_64 ppc64 ia64 s390x sparc64
+%ifarch x86_64 ppc64 ia64 s390x sparc64 aarch64
 USE_64=1
 export USE_64
+%endif
+
+%if 0%{?fedora} >= 16
+cp -p mozilla/security/coreconf/Linux2.6.mk mozilla/security/coreconf/Linux3.1.mk 
+sed -i -e 's;LINUX2_1;LINUX3_1;' mozilla/security/coreconf/Linux3.1.mk
+
+cp -p mozilla/security/coreconf/Linux3.1.mk mozilla/security/coreconf/Linux3.2.mk 
+sed -i -e 's;LINUX3_1;LINUX3_2;' mozilla/security/coreconf/Linux3.2.mk
+
+cp -p mozilla/security/coreconf/Linux3.2.mk mozilla/security/coreconf/Linux3.6.mk
+sed -i -e 's;LINUX3_1;LINUX3_6;' mozilla/security/coreconf/Linux3.6.mk
 %endif
 
 # The Makefile is not thread-safe
@@ -132,17 +151,27 @@ cp -p %{SOURCE3} .
 # There is no install target so we'll do it by hand
 
 # jars
+%if 0%{?fedora} >= 16
+install -d -m 0755 $RPM_BUILD_ROOT%{_jnidir}
+install -m 644 mozilla/dist/xpclass.jar ${RPM_BUILD_ROOT}%{_jnidir}/jss4.jar
+%else
 install -d -m 0755 $RPM_BUILD_ROOT%{_libdir}/jss
 install -m 644 mozilla/dist/xpclass.jar ${RPM_BUILD_ROOT}%{_libdir}/jss/jss4-%{version}.jar
 ln -fs jss4-%{version}.jar $RPM_BUILD_ROOT%{_libdir}/jss/jss4.jar
 
 install -d -m 0755 $RPM_BUILD_ROOT%{_jnidir}
 ln -fs %{_libdir}/jss/jss4.jar $RPM_BUILD_ROOT%{_jnidir}/jss4.jar
+%endif
 
 # We have to use the name libjss4.so because this is dynamically
 # loaded by the jar file.
 install -d -m 0755 $RPM_BUILD_ROOT%{_libdir}/jss
 install -m 0755 mozilla/dist/Linux*.OBJ/lib/libjss4.so ${RPM_BUILD_ROOT}%{_libdir}/jss/
+%if 0%{?fedora} >= 16
+pushd  ${RPM_BUILD_ROOT}%{_libdir}/jss
+    ln -fs %{_jnidir}/jss4.jar jss4.jar
+popd
+%endif
 
 # javadoc
 install -d -m 0755 $RPM_BUILD_ROOT%{_javadocdir}/%{name}-%{version}
@@ -165,6 +194,41 @@ rm -rf $RPM_BUILD_ROOT
 
 
 %changelog
+* Mon Sep 29 2014 Christina Fu <cfu@redhat.com> - 4.2.6-35
+- Bugzilla Bug #1190302 - Incorrect OIDs for SHA2 algorithms
+  (cfu for jnimeh@gmail.com)
+- Bugzilla Bug #1190303 - Key strength validation is not performed for RC4
+  algorithm (nkinder)
+- Bugzilla Bug #1167470 - Provide Tomcat support for TLS v1.1 and
+  TLS v1.2 via NSS through JSS (cfu)
+
+* Fri Jan 24 2014 Daniel Mach <dmach@redhat.com> - 4.2.6-33
+- Mass rebuild 2014-01-24
+
+* Fri Dec 27 2013 Daniel Mach <dmach@redhat.com> - 4.2.6-32
+- Mass rebuild 2013-12-27
+
+* Wed Nov 13 2013 Christina Fu <cfu@redhat.com> - 4.2.6-31
+- Bugzilla Bug #1028581 - jss fails to build on RHEL7 for non-x86 arch
+
+* Wed Jul 17 2013 Nathan Kinder <nkinder@redhat.com> - 4.2.6-30
+- Bugzilla Bug #847120 - Unable to build JSS on F17 or newer
+
+* Thu Feb 14 2013 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 4.2.6-29
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_19_Mass_Rebuild
+
+* Wed Dec 19 2012 Stanislav Ochotnicky <sochotnicky@redhat.com> - 4.2.6-28
+- revbump after jnidir change
+
+* Wed Dec 12 2012 Stanislav Ochotnicky <sochotnicky@redhat.com> - 4.2.6-27
+- Simple rebuild
+
+* Mon Nov 19 2012 Christina Fu <cfu@redhat.com> - 4.2.6-26
+- added source URLs in spec file to pass Package Wrangler
+
+* Thu Jul 19 2012 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 4.2.6-25
+- Rebuilt for https://fedoraproject.org/wiki/Fedora_18_Mass_Rebuild
+
 * Fri Mar 30 2012 Matthew Harmsen <mharmsen@redhat.com> - 4.2.6-24
 - Bugzilla Bug #797353 - Un-deprecate previously deprecated methods in
   JSS 4.2.6 . . . BadPaddingException (mharmsen)
@@ -305,5 +369,5 @@ rm -rf $RPM_BUILD_ROOT
 - Added RPM_OPT_FLAGS to XCFLAGS
 - Added link to Sun JCE information
 
-* Mon Feb 27 2007 Rob Crittenden <rcritten@redhat.com> 4.2.4-1
+* Tue Feb 27 2007 Rob Crittenden <rcritten@redhat.com> 4.2.4-1
 - Initial build
