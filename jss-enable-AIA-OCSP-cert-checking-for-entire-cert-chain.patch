@@ -1,0 +1,662 @@
+From f609ff042970a30015862f3a962f52c631780dd0 Mon Sep 17 00:00:00 2001
+From: Jack Magne <jmagne@redhat.com>
+Date: Fri, 25 Jan 2019 14:54:11 -0800
+Subject: [PATCH] Resolve Bug 1666872 - CC: Enable AIA OCSP cert checking for
+ entire cert chain.
+
+This fix for jss, solves the one use case where the pki server is configured to perform ocsp checking ONLY with the contents of the AIA extension. Previously, jss could only check the ocsp server for the leaf node cert of the cert being verified. This fix allows the cert chain to be checked over ocsp for each cert in question. This is possible due to the fact that we have made a call in the PKIX library of nss to do the actual cert verfication. This call is made with all the needed flags to tell the PKIX library to make the ocsp verifications remotely over the network using the contents of the AIA extension.
+
+Later on we can use this code to handle the other cases, but for now we want to solve this one particular problem. If the server is configured in any other configuration than the one stated, the original verification code will be called as before. Below is an example of a configuration in server.xml, that will trigger this new code:
+
+< .... enableOCSP="true" ocspCacheSize="10000" ocspMinCacheEntryDuration="7200"   .... >
+
+Note that due to ocsp caching, the cert chain verification may only be apparent after a restart of the server. A way to force an ocsp fetch every time is to set the value of ocspCacheSize=-1, which essentially disables the cache.
+
+Added a couple of minor fixes due to review comments. Possibly more to come.
+Minor include directive change to compile on branch.
+---
+ org/mozilla/jss/CryptoManager.java |  48 +++++++++
+ org/mozilla/jss/PK11Finder.c       |  95 +++++++++++++++---
+ org/mozilla/jss/ssl/callbacks.c    |  67 +++++++++++--
+ org/mozilla/jss/ssl/common.c       | 196 +++++++++++++++++++++++++++++++++++++
+ org/mozilla/jss/ssl/jssl.h         |  29 ++++++
+ org/mozilla/jss/util/java_ids.h    |   9 ++
+ 6 files changed, 422 insertions(+), 22 deletions(-)
+
+diff --git a/org/mozilla/jss/CryptoManager.java b/org/mozilla/jss/CryptoManager.java
+index f223361..81f4f95 100644
+--- a/jss/org/mozilla/jss/CryptoManager.java
++++ b/jss/org/mozilla/jss/CryptoManager.java
+@@ -1715,6 +1715,44 @@ public final class CryptoManager implements TokenSupplier
+     // OCSP management
+     ///////////////////////////////////////////////////////////////////////
+ 
++    /* OCSP Policy related */
++
++    public enum OCSPPolicy {
++        NONE,
++        NORMAL,
++        LEAF_AND_CHAIN;
++    }
++
++    private static OCSPPolicy ocspPolicy  = OCSPPolicy.NONE;
++
++    /**
++     * Gets the current ocsp Policy.
++     * Currently we only support 2 modes  OCSP_LEAF_AND_CHAIN_POLICY.
++     * And OCSP_NORMAL_POLICY, which is current processing , by default.
++     * If we have AIA based OCSP enabled we will check all certs in the chain.
++     * using PKIX cert verfication calls in the various cert auth callbacks we
++     * have.
++     * @return - The current ocsp policy in effect.
++     */
++
++    public static synchronized int getOCSPPolicy() {
++        return ocspPolicy.ordinal();
++    }
++
++    /**
++     * Sets the current ocsp Policy.
++     * Currently we only support one mode OCSP_LEAF_AND_CHAIN_POLICY.
++     * If we have AIA based OCSP enabled we will check all certs in the chain.
++     * using PKIX cert verfication calls in the various cert auth callbacks we
++     * have.
++     * @param policy - Either cert and chain or normal default processing.
++     *
++     */
++ 
++    public static synchronized void setOCSPPolicy(OCSPPolicy policy) {
++        ocspPolicy = policy;
++    }
++
+     /**
+      * Enables OCSP, note when you Initialize JSS for the first time, for
+      * backwards compatibility, the initialize will enable OCSP if you
+@@ -1733,6 +1771,16 @@ public final class CryptoManager implements TokenSupplier
+         String ocspResponderCertNickname )
+     throws GeneralSecurityException
+     {
++        /* set the ocsp policy */
++
++        if(ocspCheckingEnabled && 
++            ocspResponderURL == null && 
++            ocspResponderCertNickname == null) {
++            setOCSPPolicy(OCSPPolicy.LEAF_AND_CHAIN);
++        } else {
++            setOCSPPolicy(OCSPPolicy.NORMAL);
++        }
++
+         configureOCSPNative(ocspCheckingEnabled,
+                                    ocspResponderURL,
+                                     ocspResponderCertNickname );
+diff --git a/org/mozilla/jss/PK11Finder.c b/org/mozilla/jss/PK11Finder.c
+index a7a6e28..152227e 100644
+--- a/jss/org/mozilla/jss/PK11Finder.c
++++ b/jss/org/mozilla/jss/PK11Finder.c
+@@ -14,9 +14,9 @@
+ #include <secpkcs7.h>
+ 
+ #include <jssutil.h>
+-
+ #include <jss_exceptions.h>
+ #include "pk11util.h"
++#include "ssl/jssl.h"
+ #include <java_ids.h>
+ 
+ /*
+@@ -1574,6 +1574,9 @@ SECStatus verifyCertificateNow(JNIEnv *env, jobject self, jstring nickString,
+          goto finish;
+     }
+ 
++    int ocspPolicy = JSSL_getOCSPPolicy();
++    
++
+     certificateUsage = required_certificateUsage;
+ 
+     cert = CERT_FindCertByNickname(CERT_GetDefaultCertDB(), nickname);
+@@ -1587,8 +1590,24 @@ SECStatus verifyCertificateNow(JNIEnv *env, jobject self, jstring nickString,
+     /* 0 for certificateUsage in call to CERT_VerifyCertificateNow will
+      * retrieve the current valid usage into currUsage
+      */
+-        rv = CERT_VerifyCertificateNow(CERT_GetDefaultCertDB(), cert,
+-            checkSig, certificateUsage, NULL, currUsage );
++        if( ocspPolicy == OCSP_LEAF_AND_CHAIN_POLICY) {
++            rv = JSSL_verifyCertPKIX( cert, certificateUsage,
++                     NULL /* pin arg */, ocspPolicy, NULL, currUsage);
++
++            /* we need to do this just to get the cert usages, the pkix version
++               doesn't seem to honor the method to get the usages as of yet.
++               Let the PKIX call only determine the final fate.
++            */
++            if(rv == SECSuccess) {
++                CERT_VerifyCertificateNow(CERT_GetDefaultCertDB(), cert,
++                checkSig, certificateUsage, NULL, currUsage );
++            }
++
++        } else {
++            rv = CERT_VerifyCertificateNow(CERT_GetDefaultCertDB(), cert,
++                checkSig, certificateUsage, NULL, currUsage );
++        }
++
+         if ((rv == SECSuccess) && certificateUsage == 0x0000) {
+             if (*currUsage == 
+                 ( certUsageUserCertImport |
+@@ -1639,6 +1658,8 @@ Java_org_mozilla_jss_CryptoManager_verifyCertificateNowNative(JNIEnv *env,
+          goto finish;
+     }
+ 
++    int ocspPolicy = JSSL_getOCSPPolicy();
++
+     certificateUsage = required_certificateUsage;
+ 
+     cert = CERT_FindCertByNickname(CERT_GetDefaultCertDB(), nickname);
+@@ -1653,8 +1674,23 @@ Java_org_mozilla_jss_CryptoManager_verifyCertificateNowNative(JNIEnv *env,
+      * just get the current usage (which we are not passing back for now
+      * but will bypass the certificate usage check
+      */
+-        rv = CERT_VerifyCertificateNow(CERT_GetDefaultCertDB(), cert,
+-            checkSig, certificateUsage, NULL, &currUsage );
++
++        if( ocspPolicy == OCSP_LEAF_AND_CHAIN_POLICY) {
++            rv= JSSL_verifyCertPKIX( cert, certificateUsage,
++                     NULL /* pin arg */, ocspPolicy, NULL, &currUsage);
++
++            /* we need to do this just to get the cert usages, the pkix version
++               doesn't seem to honor the method to get the usages as of yet.
++               Let the PKIX call only determine the final fate.
++            */
++            if(rv == SECSuccess) {
++                CERT_VerifyCertificateNow(CERT_GetDefaultCertDB(), cert,
++                checkSig, certificateUsage, NULL, &currUsage );
++            }
++        } else {
++            rv = CERT_VerifyCertificateNow(CERT_GetDefaultCertDB(), cert,
++                checkSig, certificateUsage, NULL, &currUsage );
++        }
+     }
+ 
+ finish:
+@@ -1720,12 +1756,14 @@ Java_org_mozilla_jss_CryptoManager_verifyCertificateNowNative2(JNIEnv *env,
+     SECStatus                rv = SECFailure;
+     CERTCertificate          *cert = NULL;
+     char                     *nickname = NULL;
+-    
++   
+     if (nickString == NULL) {
+         JSS_throwMsg(env, INVALID_NICKNAME_EXCEPTION, "Missing certificate nickname");
+         goto finish;
+     }
+ 
++    int ocspPolicy = JSSL_getOCSPPolicy();
++
+     nickname = (char *) (*env)->GetStringUTFChars(env, nickString, NULL);
+     if (nickname == NULL) {
+         JSS_throwMsg(env, INVALID_NICKNAME_EXCEPTION, "Missing certificate nickname");
+@@ -1747,8 +1785,25 @@ Java_org_mozilla_jss_CryptoManager_verifyCertificateNowNative2(JNIEnv *env,
+     /* 0 for certificateUsage in call to CERT_VerifyCertificateNow will
+      * retrieve the current valid usage into currUsage
+      */
+-    rv = CERT_VerifyCertificateNow(CERT_GetDefaultCertDB(), cert,
+-        checkSig, certificateUsage, NULL, &currUsage);
++
++    if( ocspPolicy == OCSP_LEAF_AND_CHAIN_POLICY) {
++        rv = JSSL_verifyCertPKIX( cert, certificateUsage,
++                     NULL /* pin arg */, ocspPolicy, NULL, &currUsage);
++
++        /* we need to do this just to get the cert usages, the pkix version
++           doesn't seem to honor the method to get the usages as of yet.
++           Let the PKIX call only determine the final fate.
++        */
++        if(rv == SECSuccess) {
++            CERT_VerifyCertificateNow(CERT_GetDefaultCertDB(), cert,
++            checkSig, certificateUsage, NULL, &currUsage );
++
++        }
++
++    } else {
++        rv = CERT_VerifyCertificateNow(CERT_GetDefaultCertDB(), cert,
++                     checkSig, certificateUsage, NULL, &currUsage);
++    }
+ 
+     if (rv != SECSuccess) {
+         JSS_throwMsgPrErr(env, CERTIFICATE_EXCEPTION, "Invalid certificate");
+@@ -1803,6 +1858,9 @@ Java_org_mozilla_jss_CryptoManager_verifyCertNowNative(JNIEnv *env,
+     if( nickname == NULL ) {
+          goto finish;
+     }
++
++    int ocspPolicy = JSSL_getOCSPPolicy();
++
+     certUsage = cUsage;
+     cert = CERT_FindCertByNickname(CERT_GetDefaultCertDB(), nickname);
+ 
+@@ -1812,8 +1870,13 @@ Java_org_mozilla_jss_CryptoManager_verifyCertNowNative(JNIEnv *env,
+         PR_smprintf_free(message);
+         goto finish;
+     } else {
+-        rv = CERT_VerifyCertNow(CERT_GetDefaultCertDB(), cert,
+-            checkSig, certUsage, NULL );
++        if( ocspPolicy == OCSP_LEAF_AND_CHAIN_POLICY) {
++            rv = JSSL_verifyCertPKIX( cert, certUsage,
++                NULL /* pin arg */, ocspPolicy, NULL, NULL);
++        } else {
++            rv = CERT_VerifyCertNow(CERT_GetDefaultCertDB(), cert,
++                checkSig, certUsage, NULL );
++        }
+     }
+ 
+ finish:
+@@ -1858,6 +1921,8 @@ Java_org_mozilla_jss_CryptoManager_verifyCertTempNative(JNIEnv *env,
+     derCerts[0] = JSS_ByteArrayToSECItem(env, packageArray);
+     derCerts[1] = NULL;
+ 
++    int ocspPolicy = JSSL_getOCSPPolicy();
++
+     rv = CERT_ImportCerts(certdb, cUsage,
+                           1, derCerts, &certArray, PR_FALSE /*temp Certs*/,
+                           PR_FALSE /*caOnly*/, NULL);
+@@ -1869,8 +1934,14 @@ Java_org_mozilla_jss_CryptoManager_verifyCertTempNative(JNIEnv *env,
+     }
+ 
+     certUsage = cUsage;
+-    rv = CERT_VerifyCertNow(certdb, certArray[0],
+-                            checkSig, certUsage, NULL );
++
++    if( ocspPolicy == OCSP_LEAF_AND_CHAIN_POLICY) {
++        rv = JSSL_verifyCertPKIX( certArray[0], certUsage,
++            NULL /* pin arg */, ocspPolicy, NULL, NULL);
++    } else {
++        rv = CERT_VerifyCertNow(certdb, certArray[0],
++            checkSig, certUsage, NULL );
++    }
+ 
+     finish:
+     /* this checks for NULL */
+diff --git a/org/mozilla/jss/ssl/callbacks.c b/org/mozilla/jss/ssl/callbacks.c
+index 0738e79..dfbe408 100644
+--- a/jss/org/mozilla/jss/ssl/callbacks.c
++++ b/jss/org/mozilla/jss/ssl/callbacks.c
+@@ -20,6 +20,40 @@
+ #include <pk11util.h>
+ #include <secder.h>
+ 
++int
++JSSL_getOCSPPolicy() {
++    JNIEnv *env;
++    jint policy = -1;
++
++    jmethodID getOCSPPolicyID;
++    jclass cryptoManagerClass;
++
++    /* get the JNI environment */
++    if((*JSS_javaVM)->AttachCurrentThread(JSS_javaVM, (void**)&env, NULL) != 0){
++        PR_ASSERT(PR_FALSE);
++        goto finish;
++    }
++
++    cryptoManagerClass = (*env)->FindClass(env, CRYPTO_MANAGER_NAME);
++    if( cryptoManagerClass == NULL ) {
++        ASSERT_OUTOFMEM(env);
++        goto finish;
++    }
++    getOCSPPolicyID = (*env)->GetStaticMethodID(env, cryptoManagerClass,
++        GET_OCSP_POLICY_NAME,GET_OCSP_POLICY_SIG);
++
++    if( getOCSPPolicyID == NULL ) {
++        ASSERT_OUTOFMEM(env);
++        goto finish;
++    }
++
++    policy = (*env)->CallStaticIntMethod(env, cryptoManagerClass,
++         getOCSPPolicyID);
++
++finish:
++    return (int) policy;
++}
++
+ static SECStatus
+ secCmpCertChainWCANames(CERTCertificate *cert, CERTDistNames *caNames) 
+ {
+@@ -435,8 +469,9 @@ JSSL_DefaultCertAuthCallback(void *arg, PRFileDesc *fd, PRBool checkSig,
+     SECCertUsage      certUsage;
+     CERTCertificate   *peerCert=NULL;
+ 
++    int ocspPolicy = JSSL_getOCSPPolicy();
++
+     certUsage = isServer ? certUsageSSLClient : certUsageSSLServer;
+- 
+ 
+     /* SSL_PeerCertificate() returns a shallow copy of the cert, so we
+        must destroy it before we exit this function */
+@@ -444,8 +479,13 @@ JSSL_DefaultCertAuthCallback(void *arg, PRFileDesc *fd, PRBool checkSig,
+     peerCert   = SSL_PeerCertificate(fd);
+ 
+     if (peerCert) {
+-        rv = CERT_VerifyCertNow(CERT_GetDefaultCertDB(), peerCert,
+-                checkSig, certUsage, NULL /*pinarg*/);
++        if( ocspPolicy == OCSP_LEAF_AND_CHAIN_POLICY) {
++            rv = JSSL_verifyCertPKIX( peerCert, certUsage,
++                     NULL /* pin arg */, ocspPolicy, NULL, NULL);
++        } else {
++            rv = CERT_VerifyCertNow(CERT_GetDefaultCertDB(), peerCert,
++                    checkSig, certUsage, NULL /*pinarg*/);
++        }
+     }
+ 
+     /* if we're a server, then we don't need to check the CN of the
+@@ -561,6 +601,8 @@ JSSL_JavaCertAuthCallback(void *arg, PRFileDesc *fd, PRBool checkSig,
+     log.tail = NULL;
+     log.count = 0;
+ 
++    int ocspPolicy = JSSL_getOCSPPolicy();
++
+     /* get the JNI environment */
+     if((*JSS_javaVM)->AttachCurrentThread(JSS_javaVM, (void**)&env, NULL) != 0){
+         PR_ASSERT(PR_FALSE);
+@@ -581,13 +623,18 @@ JSSL_JavaCertAuthCallback(void *arg, PRFileDesc *fd, PRBool checkSig,
+      * logging parameter)
+      */
+ 
+-    verificationResult = CERT_VerifyCert(   CERT_GetDefaultCertDB(),
+-                            peerCert,
+-                            checkSig,
+-                            certUsage,
+-                            PR_Now(),
+-                            NULL /*pinarg*/,
+-                            &log);
++    if( ocspPolicy == OCSP_LEAF_AND_CHAIN_POLICY) {
++        verificationResult = JSSL_verifyCertPKIX( peerCert, certUsage,
++                                 NULL /* pin arg */, ocspPolicy, &log, NULL);
++     }  else {
++        verificationResult = CERT_VerifyCert(   CERT_GetDefaultCertDB(),
++                                peerCert,
++                                checkSig,
++                                certUsage,
++                                PR_Now(),
++                                NULL /*pinarg*/,
++                                &log);
++     }
+ 
+     if (verificationResult == SECSuccess && log.count > 0) {
+         verificationResult = SECFailure;
+diff --git a/org/mozilla/jss/ssl/common.c b/org/mozilla/jss/ssl/common.c
+index 84a4332..7952488 100644
+--- a/jss/org/mozilla/jss/ssl/common.c
++++ b/jss/org/mozilla/jss/ssl/common.c
+@@ -15,6 +15,7 @@
+ #include <pk11util.h>
+ #include "_jni/org_mozilla_jss_ssl_SSLSocket.h"
+ #include "jssl.h"
++#include "cert.h"
+ 
+ #ifdef WIN32
+ #include <winsock.h>
+@@ -898,3 +899,198 @@ finish:
+         PR_ASSERT(ret == 0);
+     }
+ }
++
++/* Get the trusted anchor for pkix */
++
++CERTCertificate * getRoot(CERTCertificate *cert, 
++    SECCertificateUsage certUsage) 
++{
++    CERTCertificate  *root = NULL;
++    CERTCertListNode *node = NULL;
++
++    if( !cert ) {
++        goto finish;
++    }
++
++    CERTCertList *certList =  CERT_GetCertChainFromCert(cert, 
++        PR_Now(), 
++        certUsage);
++
++    if( certList == NULL) {
++        goto finish;
++    }
++
++    for (node = CERT_LIST_HEAD(certList);
++       !CERT_LIST_END(node, certList);
++       node = CERT_LIST_NEXT(node)) {
++       
++        /* try to find the root */
++       if( node->cert && node->cert->isRoot ) {
++          root = CERT_DupCertificate(node->cert) ;
++       } 
++    }
++
++finish:
++  
++    CERT_DestroyCertList (certList); 
++    return root; 
++}
++
++/* Verify a cert using explicit PKIX call.
++ * For now only used in OCSP AIA context.
++ * The result of this call will be a full chain
++ * and leaf network AIA ocsp validation.
++ * The policy param will be used in the future to
++ * handle more scenarios.
++ */
++
++SECStatus JSSL_verifyCertPKIX(CERTCertificate *cert,
++      SECCertificateUsage certUsage,secuPWData *pwdata, int ocspPolicy,
++      CERTVerifyLog *log, SECCertificateUsage *usage) 
++{
++
++    /* put the first set of possible flags internally here first */
++    /* later there could be a more complete list to choose from */
++    /* support our hard core fetch aia ocsp policy for now */
++
++    static PRUint64 ocsp_Enabled_Hard_Policy_LeafFlags[2] = {
++        /* crl */
++        0,
++        /* ocsp */
++        CERT_REV_M_TEST_USING_THIS_METHOD |
++        CERT_REV_M_FAIL_ON_MISSING_FRESH_INFO
++    };
++
++    static PRUint64 ocsp_Enabled_Hard_Policy_ChainFlags[2] = {
++        /* crl */
++        0,
++        /* ocsp */
++        CERT_REV_M_TEST_USING_THIS_METHOD |
++        CERT_REV_M_FAIL_ON_MISSING_FRESH_INFO
++    };
++
++    static CERTRevocationMethodIndex
++        ocsp_Enabled_Hard_Policy_Method_Preference = {
++            cert_revocation_method_ocsp
++        };
++
++    static CERTRevocationFlags ocsp_Enabled_Hard_Policy = {
++    { /* leafTests */
++      2,
++      ocsp_Enabled_Hard_Policy_LeafFlags,
++      1,
++      &ocsp_Enabled_Hard_Policy_Method_Preference,
++      0 },
++    { /* chainTests */
++      2,
++      ocsp_Enabled_Hard_Policy_ChainFlags,
++      1,
++      &ocsp_Enabled_Hard_Policy_Method_Preference,
++      0 }
++    };
++
++    /* for future expansion */
++
++    CERTValOutParam cvout[20] = {0};
++    CERTValInParam cvin[20] = {0};
++
++    int inParamIndex = 0;
++    int outParamIndex = 0;
++    CERTRevocationFlags *rev = NULL;
++
++    CERTCertList *trustedCertList = NULL;
++
++    PRBool fetchCerts = PR_FALSE;
++
++    SECStatus res =  SECFailure;
++    if(cert == NULL) {
++        goto finish;
++    }
++
++    if(ocspPolicy != OCSP_LEAF_AND_CHAIN_POLICY) {
++        goto finish;
++    }
++
++    /* Force the strict ocsp network check on chain
++       and leaf.
++    */
++
++    fetchCerts = PR_TRUE;   
++    rev = &ocsp_Enabled_Hard_Policy;
++
++    /* fetch aia over net */
++ 
++    cvin[inParamIndex].type = cert_pi_useAIACertFetch;
++    cvin[inParamIndex].value.scalar.b = fetchCerts;
++    inParamIndex++; 
++
++    /* time */
++
++    cvin[inParamIndex].type = cert_pi_date;
++    cvin[inParamIndex].value.scalar.time = PR_Now();
++    inParamIndex++;
++
++    /* flags */
++
++    cvin[inParamIndex].type = cert_pi_revocationFlags;
++    cvin[inParamIndex].value.pointer.revocation = rev;
++    inParamIndex++;
++
++
++    /* establish trust anchor */
++
++    CERTCertificate *root = getRoot(cert,certUsage);
++
++    /* Try to add the root as the trust anchor so all the
++       other memebers of the ca chain will get validated.
++    */
++
++    if( root != NULL ) {
++        trustedCertList = CERT_NewCertList();
++        CERT_AddCertToListTail(trustedCertList, root);        
++
++        cvin[inParamIndex].type = cert_pi_trustAnchors;
++        cvin[inParamIndex].value.pointer.chain = trustedCertList;
++
++        inParamIndex++;
++    }
++
++    cvin[inParamIndex].type = cert_pi_end;
++
++    if(log != NULL) {
++        cvout[outParamIndex].type = cert_po_errorLog;
++        cvout[outParamIndex].value.pointer.log = log;
++        outParamIndex ++;
++    }
++
++    int usageIndex = 0;
++    if(usage != NULL) {
++        usageIndex = outParamIndex;
++        cvout[outParamIndex].type = cert_po_usages;
++        cvout[outParamIndex].value.scalar.usages = 0;
++        outParamIndex ++;
++    }
++
++    cvout[outParamIndex].type = cert_po_end;
++
++    res = CERT_PKIXVerifyCert(cert, certUsage, cvin, cvout, &pwdata);
++
++finish:
++    /* clean up any trusted cert list */
++
++    if (trustedCertList) {
++        CERT_DestroyCertList(trustedCertList);
++        trustedCertList = NULL;
++    }
++
++    if(root) {
++       CERT_DestroyCertificate(root);
++       root = NULL;
++    }
++
++    if(res == SECSuccess && usage) {
++        *usage = cvout[usageIndex].value.scalar.usages;
++    }
++
++    return res;
++}
+diff --git a/org/mozilla/jss/ssl/jssl.h b/org/mozilla/jss/ssl/jssl.h
+index 571c2a4..02771f8 100644
+--- a/jss/org/mozilla/jss/ssl/jssl.h
++++ b/jss/org/mozilla/jss/ssl/jssl.h
+@@ -5,8 +5,27 @@
+ #ifndef ORG_MOZILLA_JSS_SSL_JSSL_H
+ #define ORG_MOZILLA_JSS_SSL_JSSL_H
+ 
++/* ocsp policy constants */
++
++/* ocsp policy constants */
++static const int OCSP_NO_POLICY = 0;
++static const int OCSP_NORMAL_POLICY = 1;
++static const int OCSP_LEAF_AND_CHAIN_POLICY = 2;
++
+ #include <ssl.h>
+ 
++typedef struct
++{
++    enum
++    {
++        PW_NONE = 0,
++        PW_FROMFILE = 1,
++        PW_PLAINTEXT = 2,
++        PW_EXTERNAL = 3
++    } source;
++    char *data;
++} secuPWData;
++
+ struct JSSL_SocketData {
+     PRFileDesc *fd;
+     jobject socketObject; /* weak global ref */
+@@ -120,4 +139,14 @@ JSS_SSL_processExceptions(JNIEnv *env, PRFilePrivate *priv);
+ 
+ void JSSL_throwSSLSocketException(JNIEnv *env, char *message);
+ 
++int
++JSSL_getOCSPPolicy();
++
++
++SECStatus 
++JSSL_verifyCertPKIX(CERTCertificate *cert,
++                    SECCertificateUsage certUsage,
++                    secuPWData *pwdata, int ocspPolicy,
++                    CERTVerifyLog *log,SECCertificateUsage *usage);
++
+ #endif
+diff --git a/org/mozilla/jss/util/java_ids.h b/org/mozilla/jss/util/java_ids.h
+index b69a204..523642a 100644
+--- a/jss/org/mozilla/jss/util/java_ids.h
++++ b/jss/org/mozilla/jss/util/java_ids.h
+@@ -277,6 +277,15 @@ PR_BEGIN_EXTERN_C
+ #define GET_BUF_SIZE_SIG "()I"
+ 
+ /*
++ * CryptoManager
++ *
++*/
++
++#define CRYPTO_MANAGER_NAME "org/mozilla/jss/CryptoManager"
++#define GET_OCSP_POLICY_NAME "getOCSPPolicy"
++#define GET_OCSP_POLICY_SIG "()I"
++
++/*
+  * SocketBase
+  */
+ #define SOCKET_BASE_NAME "org/mozilla/jss/ssl/SocketBase"
+-- 
+1.8.3.1
+

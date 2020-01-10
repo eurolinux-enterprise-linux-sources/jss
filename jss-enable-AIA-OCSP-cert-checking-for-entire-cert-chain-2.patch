@@ -1,0 +1,144 @@
+From 5e55a4bd86d7df8e24b78feaea772255d53efaa5 Mon Sep 17 00:00:00 2001
+From: Jack Magne <jmagne@redhat.com>
+Date: Fri, 8 Feb 2019 11:21:48 -0800
+Subject: [PATCH] Additional: Resolve Bug 1666872 - CC: Enable AIA OCSP cert
+ checking for entire cert chain.
+
+Simple fix to make sure we are using the correct variant of the NSS cert usage quantity.
+
+It turns out some calls need a SECCertUsage and others need a SECCertificateUsage.
+We also need to convert between the two in certain instances.
+
+Found and fixed double certificate object free issue.
+---
+ org/mozilla/jss/ssl/callbacks.c | 10 ++++++++--
+ org/mozilla/jss/ssl/common.c    | 19 ++++++++++++++-----
+ org/mozilla/jss/ssl/jssl.h      |  2 +-
+ 3 files changed, 23 insertions(+), 8 deletions(-)
+
+diff --git a/org/mozilla/jss/ssl/callbacks.c b/org/mozilla/jss/ssl/callbacks.c
+index dfbe408..1f8cc56 100644
+--- a/jss/org/mozilla/jss/ssl/callbacks.c
++++ b/jss/org/mozilla/jss/ssl/callbacks.c
+@@ -473,6 +473,9 @@ JSSL_DefaultCertAuthCallback(void *arg, PRFileDesc *fd, PRBool checkSig,
+ 
+     certUsage = isServer ? certUsageSSLClient : certUsageSSLServer;
+ 
++    /* PKIX call needs a SECCertificate usage, convert */
++    SECCertificateUsage certificateUsage =  (SECCertificateUsage)1 << certUsage;
++
+     /* SSL_PeerCertificate() returns a shallow copy of the cert, so we
+        must destroy it before we exit this function */
+ 
+@@ -480,7 +483,7 @@ JSSL_DefaultCertAuthCallback(void *arg, PRFileDesc *fd, PRBool checkSig,
+ 
+     if (peerCert) {
+         if( ocspPolicy == OCSP_LEAF_AND_CHAIN_POLICY) {
+-            rv = JSSL_verifyCertPKIX( peerCert, certUsage,
++            rv = JSSL_verifyCertPKIX( peerCert, certificateUsage,
+                      NULL /* pin arg */, ocspPolicy, NULL, NULL);
+         } else {
+             rv = CERT_VerifyCertNow(CERT_GetDefaultCertDB(), peerCert,
+@@ -616,6 +619,9 @@ JSSL_JavaCertAuthCallback(void *arg, PRFileDesc *fd, PRBool checkSig,
+     if (peerCert == NULL) goto finish;
+ 
+     certUsage = isServer ? certUsageSSLClient : certUsageSSLServer;
++    /* PKIX call needs a SECCertificate usage, convert */
++    SECCertificateUsage certificateUsage =  (SECCertificateUsage)1 << certUsage;
++
+ 
+     /* 
+      * verify it against current time - (can't use
+@@ -624,7 +630,7 @@ JSSL_JavaCertAuthCallback(void *arg, PRFileDesc *fd, PRBool checkSig,
+      */
+ 
+     if( ocspPolicy == OCSP_LEAF_AND_CHAIN_POLICY) {
+-        verificationResult = JSSL_verifyCertPKIX( peerCert, certUsage,
++        verificationResult = JSSL_verifyCertPKIX( peerCert, certificateUsage,
+                                  NULL /* pin arg */, ocspPolicy, &log, NULL);
+      }  else {
+         verificationResult = CERT_VerifyCert(   CERT_GetDefaultCertDB(),
+diff --git a/org/mozilla/jss/ssl/common.c b/org/mozilla/jss/ssl/common.c
+index 7952488..8c2a224 100644
+--- a/jss/org/mozilla/jss/ssl/common.c
++++ b/jss/org/mozilla/jss/ssl/common.c
+@@ -903,7 +903,7 @@ finish:
+ /* Get the trusted anchor for pkix */
+ 
+ CERTCertificate * getRoot(CERTCertificate *cert, 
+-    SECCertificateUsage certUsage) 
++    SECCertUsage certUsage) 
+ {
+     CERTCertificate  *root = NULL;
+     CERTCertListNode *node = NULL;
+@@ -945,7 +945,7 @@ finish:
+  */
+ 
+ SECStatus JSSL_verifyCertPKIX(CERTCertificate *cert,
+-      SECCertificateUsage certUsage,secuPWData *pwdata, int ocspPolicy,
++      SECCertificateUsage certificateUsage,secuPWData *pwdata, int ocspPolicy,
+       CERTVerifyLog *log, SECCertificateUsage *usage) 
+ {
+ 
+@@ -1002,6 +1002,8 @@ SECStatus JSSL_verifyCertPKIX(CERTCertificate *cert,
+ 
+     PRBool fetchCerts = PR_FALSE;
+ 
++    SECCertUsage certUsage = certUsageSSLClient /* 0 */;
++    
+     SECStatus res =  SECFailure;
+     if(cert == NULL) {
+         goto finish;
+@@ -1036,9 +1038,15 @@ SECStatus JSSL_verifyCertPKIX(CERTCertificate *cert,
+     cvin[inParamIndex].value.pointer.revocation = rev;
+     inParamIndex++;
+ 
+-
+     /* establish trust anchor */
+ 
++    /* We need to convert the SECCertificateUsage to a SECCertUsage to obtain
++     * the root.
++    */
++
++    SECCertificateUsage testUsage = certificateUsage;
++    while (0 != (testUsage = testUsage >> 1)) { certUsage++; }
++
+     CERTCertificate *root = getRoot(cert,certUsage);
+ 
+     /* Try to add the root as the trust anchor so all the
+@@ -1073,7 +1081,7 @@ SECStatus JSSL_verifyCertPKIX(CERTCertificate *cert,
+ 
+     cvout[outParamIndex].type = cert_po_end;
+ 
+-    res = CERT_PKIXVerifyCert(cert, certUsage, cvin, cvout, &pwdata);
++    res = CERT_PKIXVerifyCert(cert, certificateUsage, cvin, cvout, &pwdata);
+ 
+ finish:
+     /* clean up any trusted cert list */
+@@ -1083,8 +1091,9 @@ finish:
+         trustedCertList = NULL;
+     }
+ 
++    /* CERT_DestroyCertList destroys interior certs for us. */
++
+     if(root) {
+-       CERT_DestroyCertificate(root);
+        root = NULL;
+     }
+ 
+diff --git a/org/mozilla/jss/ssl/jssl.h b/org/mozilla/jss/ssl/jssl.h
+index 02771f8..e76db90 100644
+--- a/jss/org/mozilla/jss/ssl/jssl.h
++++ b/jss/org/mozilla/jss/ssl/jssl.h
+@@ -145,7 +145,7 @@ JSSL_getOCSPPolicy();
+ 
+ SECStatus 
+ JSSL_verifyCertPKIX(CERTCertificate *cert,
+-                    SECCertificateUsage certUsage,
++                    SECCertificateUsage certificateUsage,
+                     secuPWData *pwdata, int ocspPolicy,
+                     CERTVerifyLog *log,SECCertificateUsage *usage);
+ 
+-- 
+1.8.3.1
+

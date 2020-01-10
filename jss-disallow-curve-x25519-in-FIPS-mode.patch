@@ -1,0 +1,51 @@
+From ab0bb8952fbd0f2c06703f26c49c0c039cd67c00 Mon Sep 17 00:00:00 2001
+From: Alexander Scheel <ascheel@redhat.com>
+Date: Wed, 23 Jan 2019 10:57:27 -0500
+Subject: [PATCH] Disable x25519 in FIPS mode
+
+NSS's pkcs11.txt includes global ciphersuite options, however, it
+doesn't understand Curve25519 as a parameter. Until such support is
+added (or NIST finally approves Curve25519 for FIPS 140-2 usage!),
+manually disable Curve25519 when FIPS mode is enabled.
+
+Signed-off-by: Alexander Scheel <ascheel@redhat.com>
+---
+ org/mozilla/jss/CryptoManager.c    | 6 ++++++
+ org/mozilla/jss/CryptoManager.java | 2 ++
+ 2 files changed, 8 insertions(+)
+
+diff --git a/org/mozilla/jss/CryptoManager.c b/org/mozilla/jss/CryptoManager.c
+index 56e66b2..eb8b922 100644
+--- a/jss/org/mozilla/jss/CryptoManager.c
++++ b/jss/org/mozilla/jss/CryptoManager.c
+@@ -976,8 +976,14 @@ JNIEXPORT jboolean JNICALL
+ Java_org_mozilla_jss_CryptoManager_FIPSEnabled(JNIEnv *env, jobject this)
+ {
+     if( PK11_IsFIPS() ) {
++        /* There's a bug in NSS where it won't disable x25519 in FIPS mode.
++         * Since they won't fix the bug, we have to do it ourselves. */
++        NSS_SetAlgorithmPolicy(SEC_OID_CURVE25519, 0, NSS_USE_ALG_IN_SSL_KX);
+         return JNI_TRUE;
+     } else {
++        /* In case FIPS mode is toggled, re-enable x25519 as it is a good
++         * curve. */
++        NSS_SetAlgorithmPolicy(SEC_OID_CURVE25519, 1, NSS_USE_ALG_IN_SSL_KX);
+         return JNI_FALSE;
+     }
+ }
+diff --git a/org/mozilla/jss/CryptoManager.java b/org/mozilla/jss/CryptoManager.java
+index 9e5503d..f223361 100644
+--- a/jss/org/mozilla/jss/CryptoManager.java
++++ b/jss/org/mozilla/jss/CryptoManager.java
+@@ -838,6 +838,8 @@ public final class CryptoManager implements TokenSupplier
+         if(instance==null) {
+             throw new NotInitializedException();
+         }
++        /* throw away call -- disables x25519 if we're in FIPS mode */
++        instance.FIPSEnabled();
+         return instance;
+     }
+ 
+-- 
+1.8.3.1
+

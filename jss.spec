@@ -7,7 +7,7 @@ URL:            http://www.dogtagpki.org/wiki/JSS
 License:        MPLv1.1 or GPLv2+ or LGPLv2+
 
 Version:        4.4.4
-Release:        3%{?_timestamp}%{?_commit_id}%{?dist}
+Release:        5%{?_timestamp}%{?_commit_id}%{?dist}
 
 # To generate the source tarball:
 #
@@ -25,6 +25,10 @@ Patch4:         jss-add-travis-yml.patch
 Patch5:         jss-add-x509-cert-and-crl-migration.patch
 Patch6:         jss-fix-algorithm-identifier-encode-decode.patch
 Patch7:         jss-add-TLS-SHA384-ciphers.patch
+Patch8:         jss-disallow-curve-x25519-in-FIPS-mode.patch
+Patch9:         jss-enable-AIA-OCSP-cert-checking-for-entire-cert-chain.patch
+Patch10:        jss-enable-AIA-OCSP-cert-checking-for-entire-cert-chain-2.patch
+
 
 Conflicts:      idm-console-framework < 1.1.17-4
 Conflicts:      pki-base < 10.4.0
@@ -83,6 +87,9 @@ pushd jss
 %patch5 -p1
 %patch6 -p2
 %patch7 -p2
+%patch8 -p2
+%patch9 -p2
+%patch10 -p2
 popd
 
 ################################################################################
@@ -179,6 +186,14 @@ cp -p jss/*.txt $RPM_BUILD_ROOT%{_javadocdir}/%{name}-%{version}
 
 ################################################################################
 %changelog
+* Fri Feb 15 2019 Dogtag PKI Team <pki-devel@redhat.com> 4.4.4-5
+- Bugzilla #1671247 - CC: Enable AIA OCSP cert checking for entire cert
+  chain [rhel-7.6.z] (jmagne)
+
+* Thu Jan 31 2019 Dogtag PKI Team <pki-devel@redhat.com> 4.4.4-4
+- Bugzilla #1671244 - x25519 allowed in FIPS mode [rhel-7.6.z] (ascheel)
+- Bugzilla #1671247 - CC: Enable AIA OCSP cert checking for entire cert
+  chain [rhel-7.6.z] (jmagne)
 
 * Thu Jul  5 2018 Dogtag PKI Team <pki-devel@redhat.com> 4.4.4-3
 - Bugzilla #1534772 - org.mozilla.jss.pkix.primitive.AlgorithmIdentifier
