@@ -7,7 +7,7 @@ URL:            http://www.dogtagpki.org/wiki/JSS
 License:        MPLv1.1 or GPLv2+ or LGPLv2+
 
 Version:        4.4.6
-Release:        3%{?_timestamp}%{?_commit_id}.el7_7
+Release:        1%{?_timestamp}%{?_commit_id}%{?dist}
 
 # To generate the source tarball:
 # $ git clone https://github.com/dogtagpki/jss.git
@@ -23,9 +23,7 @@ Source:         https://github.com/dogtagpki/%{name}/archive/v%{version}/%{name}
 #     --stdout \
 #     <version tag> \
 #     > jss-VERSION-RELEASE.patch
-Patch1: 0001-JSS-CVE-2019-14823-fix.patch
-Patch2: 0002-Add-script-to-add-common-root-CAs.patch
-Patch3: 0003-Add-optional-test-case-against-badssl.com.patch
+# Patch: jss-VERSION-RELEASE.patch
 
 Conflicts:      idm-console-framework < 1.1.17-4
 Conflicts:      pki-base < 10.4.0
@@ -180,12 +178,6 @@ cp -p jss/*.txt $RPM_BUILD_ROOT%{_javadocdir}/%{name}-%{version}
 
 ################################################################################
 %changelog
-* Thu Sep 12 2019 Dogtag PKI Team <pki-devel@redhat.com 4.4.6-3
-- NVR bump
-
-* Wed Sep 11 2019 Dogtag PKI Team <pki-devel@redhat.com> 4.4.6-2
-- Bugzilla #1747966 - CVE 2019-14823 jss: OCSP policy "Leaf and Chain" implicitly trusts the root certificate
-
 * Fri Mar 15 2019 Dogtag PKI Team <pki-devel@redhat.com> 4.4.6-1
 - Bugzilla #1659527 - Rebase JSS in RHEL 7.7 (ascheel)
 
