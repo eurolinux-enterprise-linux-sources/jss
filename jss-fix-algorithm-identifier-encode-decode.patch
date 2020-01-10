@@ -1,0 +1,44 @@
+From 7c7a97f60c1b3400b921981a3cd9e9aae4f28987 Mon Sep 17 00:00:00 2001
+From: Christina Fu <cfu@redhat.com>
+Date: Tue, 26 Jun 2018 17:59:28 -0700
+Subject: [PATCH] Ticket 12 AlgorithmIdentifier decode/encode process alters
+ original data
+
+This patch provides fix to ensure that the encoding and decoding of an AlgorithmIdentifier
+structure would not alter the data.
+
+credit: original fix suggestion provided by david.k.stutzman2.ctr@mail.mil
+
+fixes https://pagure.io/jss/issue/12
+---
+ org/mozilla/jss/pkix/primitive/AlgorithmIdentifier.java | 13 +------------
+ 1 file changed, 1 insertion(+), 12 deletions(-)
+
+diff --git a/org/mozilla/jss/pkix/primitive/AlgorithmIdentifier.java b/org/mozilla/jss/pkix/primitive/AlgorithmIdentifier.java
+index 0662f76..3487707 100644
+--- a/org/mozilla/jss/pkix/primitive/AlgorithmIdentifier.java
++++ b/org/mozilla/jss/pkix/primitive/AlgorithmIdentifier.java
+@@ -103,19 +103,8 @@ public static class Template implements ASN1Template {
+         Assert._assert( seq.size() == 2 );
+ 
+         OBJECT_IDENTIFIER algOID = (OBJECT_IDENTIFIER)seq.elementAt(0);
+-        boolean allowParams = true;
+-        try {
+-            if (algOID.equals(SignatureAlgorithm.ECSignatureWithSHA256Digest.toOID()) ||
+-                algOID.equals(SignatureAlgorithm.ECSignatureWithSHA384Digest.toOID()) ||
+-                algOID.equals(SignatureAlgorithm.ECSignatureWithSHA512Digest.toOID())) {
+-                allowParams = false;
+-            }
+-        } catch (NoSuchAlgorithmException e) {
+-            // System.out.println("JSS: AlgorithmIdentifier:decode: " + e.toString());
+-            // unlikely to happen; swallow it. treat it as allowParams;
+-        }
+ 
+-        if (!allowParams) {
++        if (seq.elementAt(1) == null) {
+             return new AlgorithmIdentifier(
+                 algOID  // OID
+             );
+-- 
+1.8.3.1
+

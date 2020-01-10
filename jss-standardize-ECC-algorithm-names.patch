@@ -1,0 +1,41 @@
+# HG changeset patch
+# User David Stutzman<david.konrad.stutzman@us.army.mil>
+# Date 1515722400 28800
+#      Thu Jan 11 18:00:00 2018 -0800
+# Node ID 8746a3fc74785e2fd12f86d08a6886ed9160620e
+# Parent  9e2db7eee6652330723d935c2b900b9b09b1ab9d
+Bug 589158 Add support for Java Security Standard Algorithm Names for EC Signature types
+
+This patch adds the aliases for Java Security Standard Algorithm Names for EC Signature types.
+
+cfu for dstutzman (reviewed by wtc)
+
+diff --git a/org/mozilla/jss/JSSProvider.java b/org/mozilla/jss/JSSProvider.java
+--- a/org/mozilla/jss/JSSProvider.java
++++ b/org/mozilla/jss/JSSProvider.java
+@@ -79,21 +79,25 @@
+         put("Alg.Alias.Signature.SHA-1/EC", "SHA1withEC");
+         put("Alg.Alias.Signature.SHA/ECDSA", "SHA1withEC");
+         put("Alg.Alias.Signature.SHA1/ECDSA", "SHA1withEC");
++        put("Alg.Alias.Signature.SHA1withECDSA", "SHA1withEC"); //JCE Standard Name
+ 
+         put("Signature.SHA256withEC",
+             "org.mozilla.jss.provider.java.security.JSSSignatureSpi$SHA256EC");
+         put("Alg.Alias.Signature.SHA256/EC", "SHA256withEC");
+         put("Alg.Alias.Signature.SHA-256/EC", "SHA256withEC");
++        put("Alg.Alias.Signature.SHA256withECDSA", "SHA256withEC"); //JCE Standard Name
+ 
+         put("Signature.SHA384withEC",
+             "org.mozilla.jss.provider.java.security.JSSSignatureSpi$SHA384EC");
+         put("Alg.Alias.Signature.SHA384/EC", "SHA384withEC");
+         put("Alg.Alias.Signature.SHA-384/EC", "SHA384withEC");
++        put("Alg.Alias.Signature.SHA384withECDSA", "SHA384withEC"); //JCE Standard Name
+ 
+         put("Signature.SHA512withEC",
+             "org.mozilla.jss.provider.java.security.JSSSignatureSpi$SHA512EC");
+         put("Alg.Alias.Signature.SHA512/EC", "SHA512withEC");
+         put("Alg.Alias.Signature.SHA-512/EC", "SHA512withEC");
++        put("Alg.Alias.Signature.SHA512withECDSA", "SHA512withEC"); //JCE Standard Name
+ 
+         /////////////////////////////////////////////////////////////
+         // Message Digesting

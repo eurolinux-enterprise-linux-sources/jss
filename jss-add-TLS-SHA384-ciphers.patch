@@ -1,0 +1,167 @@
+From 82f4b9a032f942fdc005e12a408c8e87c9ea0f36 Mon Sep 17 00:00:00 2001
+From: Christina Fu <cfu@redhat.com>
+Date: Thu, 28 Jun 2018 17:42:36 -0700
+Subject: [PATCH] Ticket #4 Add support for TLS_*_SHA384 ciphers
+
+This patch adds support for TLS_*_SHA384 ciphers.
+
+Fixes https://pagure.io/jss/issue/4
+---
+ org/mozilla/jss/ssl/SSLCipher.java       |  7 +++++
+ org/mozilla/jss/ssl/SSLSocket.java       |  7 +++++
+ org/mozilla/jss/tests/Constants.java     | 11 ++++++--
+ org/mozilla/jss/tests/SSLClientAuth.java | 45 ++++++++++++++++++++++++++++++++
+ 4 files changed, 68 insertions(+), 2 deletions(-)
+
+diff --git a/org/mozilla/jss/ssl/SSLCipher.java b/org/mozilla/jss/ssl/SSLCipher.java
+index 30acdd7..278126b 100644
+--- a/org/mozilla/jss/ssl/SSLCipher.java
++++ b/org/mozilla/jss/ssl/SSLCipher.java
+@@ -258,8 +258,11 @@ public enum SSLCipher {
+     TLS_RSA_WITH_SEED_CBC_SHA                    (0x0096),
+ 
+     TLS_RSA_WITH_AES_128_GCM_SHA256              (0x009C),
++    TLS_RSA_WITH_AES_256_GCM_SHA384              (0x009D),
+     TLS_DHE_RSA_WITH_AES_128_GCM_SHA256          (0x009E),
++    TLS_DHE_RSA_WITH_AES_256_GCM_SHA384          (0x009F),
+     TLS_DHE_DSS_WITH_AES_128_GCM_SHA256          (0x00A2),
++    TLS_DHE_DSS_WITH_AES_256_GCM_SHA384          (0x00A3),
+ 
+     TLS_ECDH_ECDSA_WITH_NULL_SHA                 (0xc001, true),
+     TLS_ECDH_ECDSA_WITH_RC4_128_SHA              (0xc002, true),
+@@ -292,11 +295,15 @@ public enum SSLCipher {
+     TLS_ECDH_anon_WITH_AES_256_CBC_SHA           (0xc019, true),
+ 
+     TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256      (0xc023, true),
++    TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384      (0xc024, true),
+     TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256        (0xc027, true),
++    TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384        (0xc028, true),
+ 
+     TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256      (0xc02B, true),
++    TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384      (0xc02C, true),
+     TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256       (0xc02D, true),
+     TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256        (0xc02F, true),
++    TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384        (0xc030, true),
+     TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256         (0xc031, true);
+ 
+     private int id;
+diff --git a/org/mozilla/jss/ssl/SSLSocket.java b/org/mozilla/jss/ssl/SSLSocket.java
+index 0dd39fd..e104d3c 100644
+--- a/org/mozilla/jss/ssl/SSLSocket.java
++++ b/org/mozilla/jss/ssl/SSLSocket.java
+@@ -268,8 +268,11 @@ public class SSLSocket extends java.net.Socket {
+     public final static int TLS_RSA_WITH_SEED_CBC_SHA                    = 0x0096;
+ 
+     public final static int TLS_RSA_WITH_AES_128_GCM_SHA256              = 0x009C;
++    public final static int TLS_RSA_WITH_AES_256_GCM_SHA384              = 0x009D;
+     public final static int TLS_DHE_RSA_WITH_AES_128_GCM_SHA256          = 0x009E;
++    public final static int TLS_DHE_RSA_WITH_AES_256_GCM_SHA384          = 0x009F;
+     public final static int TLS_DHE_DSS_WITH_AES_128_GCM_SHA256          = 0x00A2;
++    public final static int TLS_DHE_DSS_WITH_AES_256_GCM_SHA384          = 0x00A3;
+ 
+     public final static int TLS_ECDH_ECDSA_WITH_NULL_SHA                 = 0xc001;
+     public final static int TLS_ECDH_ECDSA_WITH_RC4_128_SHA              = 0xc002;
+@@ -302,11 +305,15 @@ public class SSLSocket extends java.net.Socket {
+     public final static int TLS_ECDH_anon_WITH_AES_256_CBC_SHA           = 0xc019;
+ 
+     public final static int TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256      = 0xc023;
++    public final static int TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384      = 0xc024;
+     public final static int TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256        = 0xc027;
++    public final static int TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384        = 0xc028;
+ 
+     public final static int TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256      = 0xc02B;
++    public final static int TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384      = 0xc02C;
+     public final static int TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256       = 0xc02D;
+     public final static int TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256        = 0xc02F;
++    public final static int TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384       = 0xc030;
+     public final static int TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256         = 0xc031;
+ 
+     /*
+diff --git a/org/mozilla/jss/tests/Constants.java b/org/mozilla/jss/tests/Constants.java
+index e613034..d79ad72 100755
+--- a/org/mozilla/jss/tests/Constants.java
++++ b/org/mozilla/jss/tests/Constants.java
+@@ -142,8 +142,15 @@ public interface Constants {
+ /*77*/  new cipher(SSLSocket.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256, "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256"),
+ /*78*/  new cipher(SSLSocket.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"),
+ /*79*/  new cipher(SSLSocket.TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256, "TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256"),
+-/*78*/  new cipher(SSLSocket.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"),
+-/*80*/  new cipher(SSLSocket.TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256, "TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256")
++/*80*/  new cipher(SSLSocket.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"),
++/*81*/  new cipher(SSLSocket.TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256, "TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256"),
++/*82*/  new cipher(SSLSocket.TLS_RSA_WITH_AES_256_GCM_SHA384, "TLS_RSA_WITH_AES_256_GCM_SHA384"),
++/*83*/  new cipher(SSLSocket.TLS_DHE_RSA_WITH_AES_256_GCM_SHA384, "TLS_DHE_RSA_WITH_AES_256_GCM_SHA384"),
++/*84*/  new cipher(SSLSocket.TLS_DHE_DSS_WITH_AES_256_GCM_SHA384, "TLS_DHE_DSS_WITH_AES_256_GCM_SHA384"),
++/*85*/  new cipher(SSLSocket.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384, "TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384"),
++/*86*/  new cipher(SSLSocket.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384, "TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384"),
++/*87*/  new cipher(SSLSocket.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384, "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"),
++/*88*/  new cipher(SSLSocket.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384, "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384")
+     };
+     
+     /** Cipher supported by JSSE (JDK 1.5.x) */
+diff --git a/org/mozilla/jss/tests/SSLClientAuth.java b/org/mozilla/jss/tests/SSLClientAuth.java
+index e1c6163..b656b82 100644
+--- a/org/mozilla/jss/tests/SSLClientAuth.java
++++ b/org/mozilla/jss/tests/SSLClientAuth.java
+@@ -148,6 +148,8 @@ public class SSLClientAuth implements Runnable {
+             
+         }
+         configureDefaultSSLoptions();
++
++        testSpecificCiphers();
+         
+         useNickname = false;
+         testConnection();
+@@ -265,6 +267,49 @@ public class SSLClientAuth implements Runnable {
+             System.exit(1);
+         }
+     }
++
++    // test one or more specific ciphers
++    //   -- normally for newly added ciphers
++    private void testSpecificCiphers() {
++        try {
++            //Disable SSL2 and SSL3 ciphers
++            SSLSocket.enableSSL2Default(false);
++            SSLSocket.enableSSL3Default(false);
++            /* TLS is enabled by default */
++
++            /* Enable Session tickets by default */
++            SSLSocket.enableSessionTicketsDefault(true);
++
++            /*
++             *  when testing specific ciphers:
++             *  1. flip this to true
++             *  2. change the ciphers comparison (the code below was from
++             *     the latest test
++             */
++            if (false) {
++                System.out.println("testing new TLS_*SHA384 ciphers");
++                System.out.println("Enable ony two new ciphers.");
++                int ciphers[] =
++                        org.mozilla.jss.ssl.SSLSocket.getImplementedCipherSuites();
++                for (int i = 0; i < ciphers.length;  ++i) {
++                    if (ciphers[i] == 157 || ciphers[i] == 159) {
++                        System.out.println("enabling cipher: " + ciphers[i]);
++                        /* enable a couple SHA384 ciphers */
++                        SSLSocket.setCipherPreferenceDefault(ciphers[i], true);
++                    } else {
++                        System.out.println("disabling cipher: " + ciphers[i]);
++                        /* disable the non SHA384 ciphers */
++                        SSLSocket.setCipherPreferenceDefault(ciphers[i], false);
++                    }
++                }
++            }
++
++        } catch (SocketException ex) {
++            System.out.println("Error configuring ciphers.");
++            ex.printStackTrace();
++            System.exit(1);
++        }
++    }
+     
+     private void testConnection() throws Exception {
+         serverReady = false;
+-- 
+1.8.3.1
+

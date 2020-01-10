@@ -1,0 +1,34 @@
+# HG changeset patch
+# User David Stutzman david.konrad.stutzman@us.army.mil
+# Date 1509062346 25200
+#      Thu Oct 26 16:59:06 2017 -0700
+# Node ID b1a3c3cc6b3584948d251d3bfcfe6630d8970db5
+# Parent  252c10f448971b7ae087bde259505abd5dc5a03a
+Bugzilla.mozilla 1409867 org.mozilla.jss.pkix.cms.SignerInfo incorrectly producing signatures (especially for EC)
+
+The patch fixes the OID that goes into the signatureAlgorithm field as well as passing the full signature algorithm to the Signature context to generate the signature using the proper algorithm.
+With this patch, if one passes SignatureAlgorithm.RSASignatureWithSHA256Digest in the constructor one will now get sha256WithRSAEncryption (1 2 840 113549 1 1 11) in the signatureAlgorithm field.
+
+cfu checking in for dstutzman
+
+diff --git a/org/mozilla/jss/pkix/cms/SignerInfo.java b/org/mozilla/jss/pkix/cms/SignerInfo.java
+--- a/org/mozilla/jss/pkix/cms/SignerInfo.java
++++ b/org/mozilla/jss/pkix/cms/SignerInfo.java
+@@ -289,7 +289,7 @@
+         }
+ 
+         digestEncryptionAlgorithm = new AlgorithmIdentifier(
+-            signingAlg.getRawAlg().toOID(),null );
++            signingAlg.toOID(),null );
+ 
+ 
+         if( signedAttributes != null ) 
+@@ -332,7 +332,7 @@
+         // encrypt the DER-encoded DigestInfo with the private key
+         CryptoToken token = signingKey.getOwningToken();
+         Signature sig;
+-        sig = token.getSignatureContext( signingAlg.getRawAlg() );
++        sig = token.getSignatureContext( signingAlg );
+         sig.initSign(signingKey);
+         sig.update(toBeSigned);
+         encryptedDigest = new OCTET_STRING(sig.sign());

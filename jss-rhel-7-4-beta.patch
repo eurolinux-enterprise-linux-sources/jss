@@ -1,0 +1,844 @@
+# HG changeset patch
+# User Fraser Tweedale <ftweedal@redhat.com>
+# Date 1493324725 25200
+#      Thu Apr 27 13:25:25 2017 -0700
+# Node ID c8885dd6787639d74a1c9d634fd289ff17fa6f02
+# Parent  b2306481f30dcc8c0c060520805d405dd2546d14
+Bug 1355358 - CryptoStore: add methods for importing and exporting EncryptedPrivateKeyInfo, r=cfu
+
+diff --git a/lib/jss.def b/lib/jss.def
+--- a/lib/jss.def
++++ b/lib/jss.def
+@@ -324,3 +324,9 @@
+ ;+    local:
+ ;+       *;
+ ;+};
++;+JSS_4.4.1 {     # JSS 4.4.1 release
++;+    global:
++Java_org_mozilla_jss_pkcs11_PK11Store_importEncryptedPrivateKeyInfo;
++;+    local:
++;+       *;
++;+};
+diff --git a/org/mozilla/jss/crypto/Algorithm.c b/org/mozilla/jss/crypto/Algorithm.c
+--- a/org/mozilla/jss/crypto/Algorithm.c
++++ b/org/mozilla/jss/crypto/Algorithm.c
+@@ -86,7 +86,13 @@
+ /* 55 */    {SEC_OID_PKCS5_PBMAC1, SEC_OID_TAG},
+ /* 56 */    {SEC_OID_ANSIX962_ECDSA_SIGNATURE_SPECIFIED_DIGEST, SEC_OID_TAG},
+ /* 57 */    {CKM_NSS_AES_KEY_WRAP, PK11_MECH},
+-/* 58 */    {CKM_NSS_AES_KEY_WRAP_PAD, PK11_MECH}
++/* 58 */    {CKM_NSS_AES_KEY_WRAP_PAD, PK11_MECH},
++/* 59 */    {SEC_OID_AES_128_ECB, SEC_OID_TAG},
++/* 60 */    {SEC_OID_AES_128_CBC, SEC_OID_TAG},
++/* 61 */    {SEC_OID_AES_192_ECB, SEC_OID_TAG},
++/* 62 */    {SEC_OID_AES_192_CBC, SEC_OID_TAG},
++/* 63 */    {SEC_OID_AES_256_ECB, SEC_OID_TAG},
++/* 64 */    {SEC_OID_AES_256_CBC, SEC_OID_TAG}
+ /* REMEMBER TO UPDATE NUM_ALGS!!! */
+ };
+ 
+diff --git a/org/mozilla/jss/crypto/Algorithm.h b/org/mozilla/jss/crypto/Algorithm.h
+--- a/org/mozilla/jss/crypto/Algorithm.h
++++ b/org/mozilla/jss/crypto/Algorithm.h
+@@ -24,7 +24,7 @@
+     JSS_AlgType type;
+ } JSS_AlgInfo;
+ 
+-#define NUM_ALGS 59
++#define NUM_ALGS 65
+ 
+ extern JSS_AlgInfo JSS_AlgTable[];
+ extern CK_ULONG JSS_symkeyUsage[];
+diff --git a/org/mozilla/jss/crypto/Algorithm.java b/org/mozilla/jss/crypto/Algorithm.java
+--- a/org/mozilla/jss/crypto/Algorithm.java
++++ b/org/mozilla/jss/crypto/Algorithm.java
+@@ -212,4 +212,12 @@
+     protected static final short SEC_OID_ANSIX962_ECDSA_SIGNATURE_SPECIFIED_DIGEST=56;
+     protected static final short CKM_NSS_AES_KEY_WRAP=57;
+     protected static final short CKM_NSS_AES_KEY_WRAP_PAD=58;
++
++    // AES Encryption Algorithms
++    protected static final short SEC_OID_AES_128_ECB = 59;
++    protected static final short SEC_OID_AES_128_CBC = 60;
++    protected static final short SEC_OID_AES_192_ECB = 61;
++    protected static final short SEC_OID_AES_192_CBC = 62;
++    protected static final short SEC_OID_AES_256_ECB = 63;
++    protected static final short SEC_OID_AES_256_CBC = 64;
+ }
+diff --git a/org/mozilla/jss/crypto/CryptoStore.java b/org/mozilla/jss/crypto/CryptoStore.java
+--- a/org/mozilla/jss/crypto/CryptoStore.java
++++ b/org/mozilla/jss/crypto/CryptoStore.java
+@@ -4,6 +4,7 @@
+ 
+ package org.mozilla.jss.crypto;
+ 
++import org.mozilla.jss.CryptoManager;
+ import org.mozilla.jss.util.*;
+ import java.security.*;
+ import java.security.cert.CertificateEncodingException;
+@@ -68,9 +69,50 @@
+     public void deletePrivateKey(org.mozilla.jss.crypto.PrivateKey key)
+         throws NoSuchItemOnTokenException, TokenException;
+ 
++    /**
++     * Get an encrypted private key for the given cert.
++     *
++     * @param cert Certificate of key to be exported
++     * @param pbeAlg The PBEAlgorithm to use
++     * @param pw The password to encrypt with
++     * @param iteration Iteration count; default of 2000 if le 0
++     */
++    public byte[] getEncryptedPrivateKeyInfo(X509Certificate cert,
++        PBEAlgorithm pbeAlg, Password pw, int iteration)
++        throws CryptoManager.NotInitializedException,
++            ObjectNotFoundException, TokenException;
+ 
+-    public byte[] getEncryptedPrivateKeyInfo(X509Certificate cert,
+-        PBEAlgorithm pbeAlg, Password pw, int iteration);
++    /**
++     * Get an encrypted private key, with optional password
++     * conversion.
++     *
++     * @param conv Password converter.  If null, pw.getByteCopy()
++     *             will be used to get password bytes.
++     * @param pw The password
++     * @param alg The encryption algorithm
++     * @param n Iteration count; default of 2000 if le 0
++     * @param k The private key
++     */
++    public byte[] getEncryptedPrivateKeyInfo(
++        KeyGenerator.CharToByteConverter conv,
++        Password pw,
++        Algorithm alg,
++        int n,
++        PrivateKey k);
++
++    /**
++     * @param conv Password converter.  If null, pw.getByteCopy()
++     *             will be used to get password bytes.
++     * @param pw The password
++     * @param nickname Nickname to use for private key
++     * @param pubKey Public key corresponding to private key
++     */
++    public void importEncryptedPrivateKeyInfo(
++        KeyGenerator.CharToByteConverter conv,
++        Password pw,
++        String nickname,
++        PublicKey pubKey,
++        byte[] epkiBytes);
+ 
+     ////////////////////////////////////////////////////////////
+     // Certs
+diff --git a/org/mozilla/jss/crypto/EncryptionAlgorithm.java b/org/mozilla/jss/crypto/EncryptionAlgorithm.java
+--- a/org/mozilla/jss/crypto/EncryptionAlgorithm.java
++++ b/org/mozilla/jss/crypto/EncryptionAlgorithm.java
+@@ -347,12 +347,14 @@
+             { 2, 16, 840, 1, 101, 3, 4, 1 } );
+ 
+     public static final EncryptionAlgorithm
+-    AES_128_ECB = new EncryptionAlgorithm(CKM_AES_ECB, Alg.AES, Mode.ECB,
++    AES_128_ECB = new EncryptionAlgorithm(SEC_OID_AES_128_ECB,
++        Alg.AES, Mode.ECB,
+         Padding.NONE, (Class)null, 16,
+         AES_ROOT_OID.subBranch(1), 128);
+ 
+     public static final EncryptionAlgorithm
+-    AES_128_CBC = new EncryptionAlgorithm(CKM_AES_CBC, Alg.AES, Mode.CBC,
++    AES_128_CBC = new EncryptionAlgorithm(SEC_OID_AES_128_CBC,
++        Alg.AES, Mode.CBC,
+         Padding.NONE, IVParameterSpecClasses, 16,
+         AES_ROOT_OID.subBranch(2), 128);
+ 
+@@ -361,11 +363,13 @@
+         Padding.PKCS5, IVParameterSpecClasses, 16, null, 128); // no oid
+     
+     public static final EncryptionAlgorithm
+-    AES_192_ECB = new EncryptionAlgorithm(CKM_AES_ECB, Alg.AES, Mode.ECB,
++    AES_192_ECB = new EncryptionAlgorithm(SEC_OID_AES_192_ECB,
++        Alg.AES, Mode.ECB,
+         Padding.NONE, (Class)null, 16, AES_ROOT_OID.subBranch(21), 192);
+ 
+     public static final EncryptionAlgorithm
+-    AES_192_CBC = new EncryptionAlgorithm(CKM_AES_CBC, Alg.AES, Mode.CBC,
++    AES_192_CBC = new EncryptionAlgorithm(SEC_OID_AES_192_CBC,
++        Alg.AES, Mode.CBC,
+         Padding.NONE, IVParameterSpecClasses, 16,
+         AES_ROOT_OID.subBranch(22), 192);
+     
+@@ -374,11 +378,13 @@
+         Padding.PKCS5, IVParameterSpecClasses, 16, null, 192); // no oid
+ 
+     public static final EncryptionAlgorithm
+-    AES_256_ECB = new EncryptionAlgorithm(CKM_AES_ECB, Alg.AES, Mode.ECB,
++    AES_256_ECB = new EncryptionAlgorithm(SEC_OID_AES_256_ECB,
++        Alg.AES, Mode.ECB,
+         Padding.NONE, (Class)null, 16, AES_ROOT_OID.subBranch(41), 256);
+ 
+     public static final EncryptionAlgorithm
+-    AES_256_CBC = new EncryptionAlgorithm(CKM_AES_CBC, Alg.AES, Mode.CBC,
++    AES_256_CBC = new EncryptionAlgorithm(SEC_OID_AES_256_CBC,
++        Alg.AES, Mode.CBC,
+         Padding.NONE, IVParameterSpecClasses, 16,
+         AES_ROOT_OID.subBranch(42), 256);
+     
+diff --git a/org/mozilla/jss/pkcs11/PK11Store.c b/org/mozilla/jss/pkcs11/PK11Store.c
+--- a/org/mozilla/jss/pkcs11/PK11Store.c
++++ b/org/mozilla/jss/pkcs11/PK11Store.c
+@@ -31,6 +31,8 @@
+     char *data;
+ } secuPWData;
+ 
++SECItem *preparePassword(JNIEnv *env, jobject conv, jobject pwObj);
++
+ /**********************************************************************
+  * PK11Store.putSymKeysInVector
+  */
+@@ -533,103 +535,293 @@
+ 
+ 
+ JNIEXPORT jbyteArray JNICALL
+-Java_org_mozilla_jss_pkcs11_PK11Store_getEncryptedPrivateKeyInfo
+-(JNIEnv *env, jobject this, jobject certObj, jobject algObj,
+-    jobject pwObj, jint iteration)
++Java_org_mozilla_jss_pkcs11_PK11Store_getEncryptedPrivateKeyInfo(
++    JNIEnv *env,
++    jobject this,
++    jobject conv,
++    jobject pwObj,
++    jobject algObj,
++    jint iterations,
++    jobject key)
++{
++    // initialisations so we can goto finish
++    SECItem *pwItem = NULL;
++    SECKEYEncryptedPrivateKeyInfo *epki = NULL;
++    SECItem epkiItem;
++    epkiItem.data = NULL;
++    epkiItem.len = 0;
+ 
+-{
+-    SECKEYEncryptedPrivateKeyInfo *epki = NULL;
+-    jbyteArray encodedEpki = NULL;
++    PR_ASSERT(env != NULL && this != NULL);
++
++    if (pwObj == NULL || algObj == NULL || key == NULL) {
++        JSS_throw(env, NULL_POINTER_EXCEPTION);
++        goto finish;
++    }
++
++    if (iterations <= 0) {
++        iterations = 2000;  // set default iterations
++    }
++
++    // get slot
+     PK11SlotInfo *slot = NULL;
+-    SECOidTag algTag;
+-    jclass passwordClass = NULL;
+-    jmethodID getByteCopyMethod = NULL;
+-    jbyteArray pwArray = NULL;
+-    jbyte* pwchars = NULL;
+-    SECItem pwItem;
+-    CERTCertificate *cert = NULL;
+-    SECItem epkiItem;
+-
+-    epkiItem.data = NULL;
+-
+-    /* get slot */
+     if( JSS_PK11_getStoreSlotPtr(env, this, &slot) != PR_SUCCESS) {
+         ASSERT_OUTOFMEM(env);
+         goto finish;
+     }
+     PR_ASSERT(slot!=NULL);
+-    
+-    /* get algorithm */
+-    algTag = JSS_getOidTagFromAlg(env, algObj);
+-    if( algTag == SEC_OID_UNKNOWN ) {
+-        JSS_throwMsg(env, NO_SUCH_ALG_EXCEPTION, "Unrecognized PBE algorithm");
++
++    // get algorithm
++    SECOidTag algTag = JSS_getOidTagFromAlg(env, algObj);
++    if (algTag == SEC_OID_UNKNOWN) {
++        JSS_throwMsg(env, NO_SUCH_ALG_EXCEPTION, "Unrecognized algorithm");
+         goto finish;
+     }
+ 
+-    /*
+-     * get password
+-     */
+-    passwordClass = (*env)->GetObjectClass(env, pwObj);
+-    if(passwordClass == NULL) {
+-        ASSERT_OUTOFMEM(env);
+-        goto finish;
+-    }
+-    getByteCopyMethod = (*env)->GetMethodID(
+-                                            env,
+-                                            passwordClass,
+-                                            PW_GET_BYTE_COPY_NAME,
+-                                            PW_GET_BYTE_COPY_SIG);
+-    if(getByteCopyMethod==NULL) {
++    pwItem = preparePassword(env, conv, pwObj);
++    if (pwItem == NULL) {
+         ASSERT_OUTOFMEM(env);
+         goto finish;
+     }
+-    pwArray = (*env)->CallObjectMethod( env, pwObj, getByteCopyMethod);
+-    pwchars = (*env)->GetByteArrayElements(env, pwArray, NULL);
+-    /* !!! Include the NULL byte or not? */
+-    pwItem.data = (unsigned char*) pwchars;
+-    pwItem.len = strlen((const char*)pwchars) + 1;
+ 
+-    /*
+-     * get cert
+-     */
+-    if( JSS_PK11_getCertPtr(env, certObj, &cert) != PR_SUCCESS ) {
+-        /* exception was thrown */
++    // get key
++    SECKEYPrivateKey *privk;
++    if (JSS_PK11_getPrivKeyPtr(env, key, &privk) != PR_SUCCESS) {
++        PR_ASSERT( (*env)->ExceptionOccurred(env) != NULL);
+         goto finish;
+     }
+ 
+-    /*
+-     * export the epki
+-     */
+-    epki = PK11_ExportEncryptedPrivateKeyInfo(slot, algTag, &pwItem,
+-            cert, iteration, NULL /*wincx*/);
+-
++    // export the epki
++    epki = PK11_ExportEncryptedPrivKeyInfo(
++        slot, algTag, pwItem, privk, iterations, NULL /*wincx*/);
+ 
+-    /*
+-     * DER-encode the epki
+-     */
+-    epkiItem.data = NULL;
+-    epkiItem.len = 0;
+-    if( SEC_ASN1EncodeItem(NULL, &epkiItem, epki,
+-        SEC_ASN1_GET(SECKEY_EncryptedPrivateKeyInfoTemplate) )  == NULL ) {
+-        JSS_throwMsg(env, TOKEN_EXCEPTION, "Failed to ASN1-encode "
+-            "EncryptedPrivateKeyInfo");
++    // DER-encode the epki
++    if (SEC_ASN1EncodeItem(NULL, &epkiItem, epki,
++        SEC_ASN1_GET(SECKEY_EncryptedPrivateKeyInfoTemplate)) == NULL) {
++        JSS_throwMsg(
++            env, TOKEN_EXCEPTION,
++            "Failed to ASN1-encode EncryptedPrivateKeyInfo");
+         goto finish;
+     }
+ 
+-    /*
+-     * convert to Java byte array
+-     */
+-    encodedEpki = JSS_SECItemToByteArray(env, &epkiItem);
++    // convert to Java byte array
++    jbyteArray encodedEpki = JSS_SECItemToByteArray(env, &epkiItem);
+ 
+ finish:
+-    if( epki != NULL ) {
++    if (epki != NULL) {
+         SECKEY_DestroyEncryptedPrivateKeyInfo(epki, PR_TRUE /*freeit*/);
+     }
+-    if( pwchars != NULL ) {
+-        (*env)->ReleaseByteArrayElements(env, pwArray, pwchars, JNI_ABORT);
++    if (epkiItem.data != NULL) {
++        SECITEM_FreeItem(&epkiItem, PR_FALSE /*freeit*/);
+     }
+-    if(epkiItem.data != NULL) {
+-        PR_Free(epkiItem.data);
++    if (pwItem != NULL) {
++        SECITEM_FreeItem(pwItem, PR_TRUE /*freeit*/);
+     }
+     return encodedEpki;
+ }
++
++
++JNIEXPORT void JNICALL
++Java_org_mozilla_jss_pkcs11_PK11Store_importEncryptedPrivateKeyInfo(
++    JNIEnv *env,
++    jobject this,
++    jobject conv,
++    jobject pwObj,
++    jstring nickname,
++    jobject pubKeyObj,
++    jbyteArray epkiBytes)
++{
++    // initialisations so we can goto finish
++    SECItem *epkiItem = NULL;
++    SECKEYEncryptedPrivateKeyInfo *epki = NULL;
++    SECItem *pwItem = NULL;
++    SECItem *spkiItem = NULL;
++    CERTSubjectPublicKeyInfo *spki = NULL;
++    SECKEYPublicKey *pubKey = NULL;
++    const char *nicknameChars = NULL;
++
++    PR_ASSERT(env != NULL && this != NULL);
++
++    if (pwObj == NULL || nickname == NULL || pubKeyObj == NULL) {
++        JSS_throw(env, NULL_POINTER_EXCEPTION);
++        goto finish;
++    }
++
++    // get slot
++    PK11SlotInfo *slot = NULL;
++    if (JSS_PK11_getStoreSlotPtr(env, this, &slot) != PR_SUCCESS) {
++        ASSERT_OUTOFMEM(env);
++        goto finish;
++    }
++    PR_ASSERT(slot != NULL);
++
++    // decode EncryptedPrivateKeyInfo
++    epkiItem = JSS_ByteArrayToSECItem(env, epkiBytes);
++    epki = PR_Calloc(1, sizeof(SECKEYEncryptedPrivateKeyInfo));
++    if (SEC_ASN1DecodeItem(
++                NULL,
++                epki,
++                SEC_ASN1_GET(SECKEY_EncryptedPrivateKeyInfoTemplate),
++                epkiItem
++            ) != SECSuccess) {
++        JSS_throwMsg(env, INVALID_DER_EXCEPTION,
++            "Failed to decode EncryptedPrivateKeyInfo");
++        goto finish;
++    }
++
++    pwItem = preparePassword(env, conv, pwObj);
++    if (pwItem == NULL) {
++        ASSERT_OUTOFMEM(env);
++        goto finish;
++    }
++
++    // get public key value
++    jclass pubKeyClass = (*env)->GetObjectClass(env, pubKeyObj);
++    if (pubKeyClass == NULL) {
++        ASSERT_OUTOFMEM(env);
++        goto finish;
++    }
++    jmethodID getEncoded = (*env)->GetMethodID(
++        env, pubKeyClass, "getEncoded", "()[B");
++    if (getEncoded == NULL) {
++        ASSERT_OUTOFMEM(env);
++        goto finish;
++    }
++    jbyteArray spkiBytes = (*env)->CallObjectMethod(
++        env, pubKeyObj, getEncoded);
++    spkiItem = JSS_ByteArrayToSECItem(env, spkiBytes);
++    spki = PR_Calloc(1, sizeof(CERTSubjectPublicKeyInfo));
++    if (SEC_ASN1DecodeItem(
++                NULL,
++                spki,
++                SEC_ASN1_GET(CERT_SubjectPublicKeyInfoTemplate),
++                spkiItem
++            ) != SECSuccess) {
++        JSS_throwMsg(env, INVALID_DER_EXCEPTION,
++            "Failed to decode SubjectPublicKeyInfo");
++        goto finish;
++    }
++
++    pubKey = SECKEY_ExtractPublicKey(spki);
++    if (pubKey == NULL) {
++        JSS_throwMsgPrErr(env, INVALID_DER_EXCEPTION,
++            "Failed to extract public key from SubjectPublicKeyInfo");
++        goto finish;
++    }
++
++    SECItem *pubValue;
++    switch (pubKey->keyType) {
++        case dsaKey:
++            pubValue = &pubKey->u.dsa.publicValue;
++            break;
++        case dhKey:
++            pubValue = &pubKey->u.dh.publicValue;
++            break;
++        case rsaKey:
++            pubValue = &pubKey->u.rsa.modulus;
++            break;
++        case ecKey:
++            pubValue = &pubKey->u.ec.publicValue;
++            break;
++        default:
++            pubValue = NULL;
++    }
++
++    // prepare nickname
++    nicknameChars = (*env)->GetStringUTFChars(env, nickname, NULL);
++    if (nicknameChars == NULL) {
++        ASSERT_OUTOFMEM(env);
++        goto finish;
++    }
++    SECItem nickItem;
++    nickItem.data = nicknameChars;
++    nickItem.len = (*env)->GetStringUTFLength(env, nickname);
++
++    // if keyUsage = 0, defaults to signing and encryption/key agreement.
++    //   see pk11akey.c in NSS
++    int keyUsage = 0;
++
++    // perform import
++    SECStatus result = PK11_ImportEncryptedPrivateKeyInfo(
++        slot, epki, pwItem, &nickItem, pubValue,
++        PR_TRUE /* isperm */, PR_TRUE /* isprivate */,
++        pubKey->keyType, keyUsage, NULL /* wincx */);
++    if (result != SECSuccess) {
++        JSS_throwMsg(
++            env, TOKEN_EXCEPTION,
++            "Failed to import EncryptedPrivateKeyInfo to token");
++        goto finish;
++    }
++
++finish:
++    if (epkiItem != NULL) {
++        SECITEM_FreeItem(epkiItem, PR_TRUE /*freeit*/);
++    }
++    if (epki != NULL) {
++        SECKEY_DestroyEncryptedPrivateKeyInfo(epki, PR_TRUE /*freeit*/);
++    }
++    if (spkiItem != NULL) {
++        SECITEM_FreeItem(spkiItem, PR_TRUE /*freeit*/);
++    }
++    if (spki != NULL) {
++        SECKEY_DestroySubjectPublicKeyInfo(spki);
++    }
++    if (pwItem != NULL) {
++        SECITEM_FreeItem(pwItem, PR_TRUE /*freeit*/);
++    }
++    if (pubKey != NULL) {
++        SECKEY_DestroyPublicKey(pubKey);
++    }
++    if (nicknameChars != NULL) {
++        (*env)->ReleaseStringUTFChars(env, nickname, nicknameChars);
++    }
++}
++
++/* Process the given password through the given PasswordConverter,
++ * returning a new SECItem* on success.
++ *
++ * After use, the caller should free the SECItem:
++ *
++ *   SECITEM_FreeItem(pwItem, PR_TRUE).
++ */
++SECItem *preparePassword(JNIEnv *env, jobject conv, jobject pwObj) {
++    jclass passwordClass = (*env)->GetObjectClass(env, pwObj);
++    if (passwordClass == NULL) {
++        ASSERT_OUTOFMEM(env);
++        return NULL;
++    }
++
++    jbyteArray pwBytes;
++
++    if (conv == NULL) {
++        jmethodID getByteCopy = (*env)->GetMethodID(
++            env, passwordClass, PW_GET_BYTE_COPY_NAME, PW_GET_BYTE_COPY_SIG);
++        if (getByteCopy == NULL) {
++            ASSERT_OUTOFMEM(env);
++            return NULL;
++        }
++        pwBytes = (*env)->CallObjectMethod(env, pwObj, getByteCopy);
++    } else {
++        jmethodID getChars = (*env)->GetMethodID(
++            env, passwordClass, "getChars", "()[C");
++        if (getChars == NULL) {
++            ASSERT_OUTOFMEM(env);
++            return NULL;
++        }
++        jcharArray pwChars = (*env)->CallObjectMethod(env, pwObj, getChars);
++
++        jclass convClass = (*env)->GetObjectClass(env, conv);
++        if (conv == NULL) {
++            ASSERT_OUTOFMEM(env);
++            return NULL;
++        }
++        jmethodID convert = (*env)->GetMethodID(
++            env, convClass, "convert", "([C)[B");
++        if (convert == NULL) {
++            ASSERT_OUTOFMEM(env);
++            return NULL;
++        }
++        pwBytes = (*env)->CallObjectMethod(env, conv, convert, pwChars);
++    }
++
++    return JSS_ByteArrayToSECItem(env, pwBytes);
++}
+diff --git a/org/mozilla/jss/pkcs11/PK11Store.java b/org/mozilla/jss/pkcs11/PK11Store.java
+--- a/org/mozilla/jss/pkcs11/PK11Store.java
++++ b/org/mozilla/jss/pkcs11/PK11Store.java
+@@ -4,8 +4,10 @@
+ 
+ package org.mozilla.jss.pkcs11;
+ 
++import org.mozilla.jss.CryptoManager;
+ import org.mozilla.jss.crypto.*;
+ import org.mozilla.jss.util.*;
++import java.security.PublicKey;
+ import java.security.cert.CertificateEncodingException;
+ import java.util.Vector;
+ 
+@@ -53,8 +55,35 @@
+     public native void deletePrivateKey(PrivateKey key)
+         throws NoSuchItemOnTokenException, TokenException;
+ 
+-    public native byte[] getEncryptedPrivateKeyInfo(X509Certificate cert,
+-        PBEAlgorithm pbeAlg, Password pw, int iteration);
++    public byte[] getEncryptedPrivateKeyInfo(
++            X509Certificate cert,
++            PBEAlgorithm pbeAlg,
++            Password pw,
++            int iteration)
++            throws CryptoManager.NotInitializedException,
++                ObjectNotFoundException, TokenException {
++        return getEncryptedPrivateKeyInfo(
++            null,
++            pw,
++            pbeAlg,
++            iteration,
++            CryptoManager.getInstance().findPrivKeyByCert(cert)
++        );
++    }
++
++    public native byte[] getEncryptedPrivateKeyInfo(
++        KeyGenerator.CharToByteConverter conv,
++        Password pw,
++        Algorithm alg,
++        int n,
++        PrivateKey k);
++
++    public native void importEncryptedPrivateKeyInfo(
++        KeyGenerator.CharToByteConverter conv,
++        Password pw,
++        String nickname,
++        PublicKey pubKey,
++        byte[] epkiBytes);
+ 
+     ////////////////////////////////////////////////////////////
+     // Certs
+diff --git a/org/mozilla/jss/util/jss_exceptions.h b/org/mozilla/jss/util/jss_exceptions.h
+--- a/org/mozilla/jss/util/jss_exceptions.h
++++ b/org/mozilla/jss/util/jss_exceptions.h
+@@ -47,6 +47,8 @@
+ 
+ #define INTERRUPTED_IO_EXCEPTION "java/io/InterruptedIOException"
+ 
++#define INVALID_DER_EXCEPTION "org/mozilla/jss/crypto/InvalidDERException"
++
+ #define INVALID_NICKNAME_EXCEPTION "org/mozilla/jss/util/InvalidNicknameException"
+ 
+ #define INVALID_KEY_FORMAT_EXCEPTION "org/mozilla/jss/crypto/InvalidKeyFormatException"
+# HG changeset patch
+# User Fraser Tweedale <ftweedal@redhat.com>
+# Date 1493335326 25200
+#      Thu Apr 27 16:22:06 2017 -0700
+# Node ID ead2ea094c98ddc708169c3de411ca8d8883cab8
+# Parent  c8885dd6787639d74a1c9d634fd289ff17fa6f02
+Bug 1359731 - CryptoStore.importPrivateKey enhancements, r=cfu
+
+- Enhance CryptoStore.importPrivateKey to support temporary import, and
+- returning the private key to the caller.
+- Also remove some validation of the unused keyType argument.
+
+diff --git a/org/mozilla/jss/crypto/CryptoStore.java b/org/mozilla/jss/crypto/CryptoStore.java
+--- a/org/mozilla/jss/crypto/CryptoStore.java
++++ b/org/mozilla/jss/crypto/CryptoStore.java
+@@ -21,17 +21,30 @@
+     ////////////////////////////////////////////////////////////
+ 
+     /**
+-     * Imports a raw private key into this token.
++     * Imports a raw private key into this token (permanently).
+      *
+      * @param key The private key.
+      * @exception TokenException If the key cannot be imported to this token.
+      * @exception KeyAlreadyImportedException If the key already exists on this token.
+      */
+-    public void
++    public PrivateKey
+     importPrivateKey(  byte[] key,
+                        PrivateKey.Type type       )
+         throws TokenException, KeyAlreadyImportedException;
+ 
++    /**
++     * Imports a raw private key into this token.
++     *
++     * @param key The private key.
++     * @param temporary Whether the key should be temporary.
++     * @exception TokenException If the key cannot be imported to this token.
++     * @exception KeyAlreadyImportedException If the key already exists on this token.
++     */
++    public PrivateKey
++    importPrivateKey(  byte[] key,
++                       PrivateKey.Type type, boolean temporary)
++        throws TokenException, KeyAlreadyImportedException;
++
+ 
+     /**
+      * Returns all private keys stored on this token.
+diff --git a/org/mozilla/jss/pkcs11/PK11Store.c b/org/mozilla/jss/pkcs11/PK11Store.c
+--- a/org/mozilla/jss/pkcs11/PK11Store.c
++++ b/org/mozilla/jss/pkcs11/PK11Store.c
+@@ -429,22 +429,22 @@
+ int PK11_NumberObjectsFor(PK11SlotInfo*, CK_ATTRIBUTE*, int);
+ 
+ /***********************************************************************
+- * importPrivateKey
++ * PK11Store.importdPrivateKey
+  */
+-static void
+-importPrivateKey
++JNIEXPORT jobject JNICALL
++Java_org_mozilla_jss_pkcs11_PK11Store_importPrivateKey
+     (   JNIEnv *env,
+         jobject this,
+         jbyteArray keyArray,
+         jobject keyTypeObj,
+-        PRBool temporary            )
++        jboolean temporary            )
+ {
+     SECItem derPK;
+     PK11SlotInfo *slot;
+     jthrowable excep;
+-    KeyType keyType;
+     SECStatus status;
+     SECItem nickname;
++    jobject privkObj = NULL;
+ 
+     /*
+      * initialize so we can goto finish
+@@ -452,13 +452,6 @@
+     derPK.data = NULL;
+     derPK.len = 0;
+ 
+-
+-    keyType = JSS_PK11_getKeyType(env, keyTypeObj);
+-    if( keyType == nullKey ) {
+-        /* exception was thrown */
+-        goto finish;
+-    }
+-
+     PR_ASSERT(env!=NULL && this!=NULL);
+ 
+     if(keyArray == NULL) {
+@@ -492,14 +485,22 @@
+     nickname.len = 0;
+     nickname.data = NULL;
+ 
+-    status = PK11_ImportDERPrivateKeyInfo(slot, &derPK, &nickname,
+-                NULL /*public value*/, PR_TRUE /*isPerm*/,
+-                PR_TRUE /*isPrivate*/, 0 /*keyUsage*/, NULL /*wincx*/);
++    SECKEYPrivateKey *privk = NULL;
++    status = PK11_ImportDERPrivateKeyInfoAndReturnKey(
++                slot, &derPK, &nickname,
++                NULL /*public value*/, !temporary /*isPerm*/,
++                PR_TRUE /*isPrivate*/, 0 /*keyUsage*/,
++                &privk, NULL /*wincx*/);
+     if(status != SECSuccess) {
+         JSS_throwMsg(env, TOKEN_EXCEPTION, "Failed to import private key info");
+         goto finish;
+     }
+ 
++    privkObj = JSS_PK11_wrapPrivKey(env, &privk);
++    if (privkObj == NULL) {
++        goto finish;
++    }
++
+ finish:
+     /* Save any exceptions */
+     if( (excep=(*env)->ExceptionOccurred(env)) ) {
+@@ -515,24 +516,11 @@
+     if( excep ) {
+         (*env)->Throw(env, excep);
+     }
++    return privkObj;
+ }
+ 
+ extern const SEC_ASN1Template SECKEY_EncryptedPrivateKeyInfoTemplate[];
+ 
+-/***********************************************************************
+- * PK11Store.importdPrivateKey
+- */
+-JNIEXPORT void JNICALL
+-Java_org_mozilla_jss_pkcs11_PK11Store_importPrivateKey
+-    (   JNIEnv *env,
+-        jobject this,
+-        jbyteArray keyArray,
+-        jobject keyTypeObj        )
+-{
+-    importPrivateKey(env, this, keyArray,
+-        keyTypeObj, PR_FALSE /* not temporary */);
+-}
+-
+ 
+ JNIEXPORT jbyteArray JNICALL
+ Java_org_mozilla_jss_pkcs11_PK11Store_getEncryptedPrivateKeyInfo(
+diff --git a/org/mozilla/jss/pkcs11/PK11Store.java b/org/mozilla/jss/pkcs11/PK11Store.java
+--- a/org/mozilla/jss/pkcs11/PK11Store.java
++++ b/org/mozilla/jss/pkcs11/PK11Store.java
+@@ -23,9 +23,15 @@
+      * @exception TokenException If the key cannot be imported to this token.
+      * @exception KeyAlreadyImportedException If the key already on this token.
+      */
+-    public native void
+-    importPrivateKey(  byte[] key,
+-                       PrivateKey.Type type       )
++    public PrivateKey
++    importPrivateKey(byte[] key, PrivateKey.Type type)
++            throws TokenException,KeyAlreadyImportedException {
++        return importPrivateKey(key, type, false);
++    }
++
++    public native PrivateKey
++    importPrivateKey(
++        byte[] key, PrivateKey.Type type, boolean temporary)
+         throws TokenException,KeyAlreadyImportedException;
+ 
+     public synchronized PrivateKey[]
+# HG changeset patch
+# User Matthew Harmsen <mharmsen@redhat.com>
+# Date 1493389838 25200
+#      Fri Apr 28 07:30:38 2017 -0700
+# Node ID 4ee5af07d6d8fd7efe60d130d3e7593f6e12e642
+# Parent  ead2ea094c98ddc708169c3de411ca8d8883cab8
+Bug 1352476 - RFE: Document on the README how to create a release tag, r=emaldona
+
+diff --git a/README b/README
+--- a/README
++++ b/README
+@@ -158,7 +158,40 @@
+                be necessary.
+ 
+ 
+-(7) Known Issues
++(7) Tagging the Source Code for a Release
++
++    During development, several releases may be made.  Consequently, it is
++    good practice to create a "regular tag" to the source code at these
++    various points in time using the following format:
++
++        # hg tag -m "message" JSS_<major>_<minor>_YYYYMMDD
++
++        where:  <major> = JSS Major Version Number
++                <minor> = JSS Minor Version Number
++                YYYY    = 4-digit year (e. g. - 2017)
++                MM      = 2-digit month (e. g. - 01, ..., 12)
++                DD      = 2-digit day of the month (e. g. - 01, ..., 31)
++    
++        For example:
++
++            # hg id
++            b3e864205ff0+ tip
++
++            # hg tag -m "Added tag JSS_4_4_20170328 for changeset b3e864205ff0" JSS_4_4_20170328
++
++    At the appropriate time, a new major.minor version may be created.  At this
++    time, it is important to create a maintenance branch for any future changes
++    to the previous major.minor version:
++
++    For example:
++
++        # hg id
++        f00f00f00f00+ tip
++
++        # hg branch -m "Created branch JSS_4_4_BRANCH for changeset f00f00f00f00" JSS_4_4_BRANCH
++
++
++(8) Known Issues
+ 
+     * Mozilla Bug #1346410 - Load JSS libraries appropriately
+ 

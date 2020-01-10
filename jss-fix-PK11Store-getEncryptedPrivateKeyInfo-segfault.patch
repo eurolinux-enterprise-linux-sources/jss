@@ -1,0 +1,35 @@
+# HG changeset patch
+# User Fraser Tweedale<ftweedale@redhat.com>
+# Date 1505175862 25200
+#      Mon Sep 11 17:24:22 2017 -0700
+# Node ID 3e9a5ae2149d04877dc19b117a8917c22854f8eb
+# Parent  87dca07f7529463398734d1279bcfd7023a43d4c
+Bug 1371147 PK11Store.getEncryptedPrivateKeyInfo() segfault if export fails -
+patch jss-ftweedal-0011-Don-t-crash-if-PK11_ExportEncryptedPrivKeyInfo-retur.patch
+Subject: Don't crash if PK11_ExportEncryptedPrivKeyInfo returns NULL
+From: Fraser Tweedale <ftweedal@redhat.com>
+Content-Type: text/plain
+found patch at byte 239
+message:
+Don't crash if PK11_ExportEncryptedPrivKeyInfo returns NULL
+PK11_ExportEncryptedPrivKeyInfo returning NULL is not being handled
+properly, causing segfault.  Detect this condition and raise a
+TokenException instead.
+
+cfu for ftweedal
+
+diff -r 87dca07f7529 -r 3e9a5ae2149d org/mozilla/jss/pkcs11/PK11Store.c
+--- a/org/mozilla/jss/pkcs11/PK11Store.c	Fri Sep 08 11:56:04 2017 -0700
++++ b/org/mozilla/jss/pkcs11/PK11Store.c	Mon Sep 11 17:24:22 2017 -0700
+@@ -581,6 +581,11 @@
+     // export the epki
+     epki = PK11_ExportEncryptedPrivKeyInfo(
+         slot, algTag, pwItem, privk, iterations, NULL /*wincx*/);
++    if (epki == NULL) {
++        JSS_throwMsgPrErr(
++            env, TOKEN_EXCEPTION, "Failed to export EncryptedPrivateKeyInfo");
++        goto finish;
++    }
+ 
+     // DER-encode the epki
+     if (SEC_ASN1EncodeItem(NULL, &epkiItem, epki,

@@ -1,0 +1,68 @@
+From a8e371e54b009159e9e3a0d198bd5eb3ed68ac22 Mon Sep 17 00:00:00 2001
+From: Christina Fu <cfu@redhat.com>
+Date: Tue, 15 May 2018 14:58:07 -0700
+Subject: [PATCH] Ticket 3 JSS has wrong encoding for ecdsa with sha*
+ AlgorithmIdentifier This ticket addresses the issue to meet RFC 5758 where
+ param field must be omitted in the ECDSA Signature algorithm'
+ AlgorithmIdentifier for ecdsa-withSHA224, ecdsa-with-SHA256,
+ ecdsa-with-SHA384, or ecdsa-with-SHA512.
+
+fixes https://pagure.io/jss/issue/3
+---
+ .../jss/pkix/primitive/AlgorithmIdentifier.java    | 29 +++++++++++++++++++---
+ 1 file changed, 25 insertions(+), 4 deletions(-)
+
+diff --git a/org/mozilla/jss/pkix/primitive/AlgorithmIdentifier.java b/org/mozilla/jss/pkix/primitive/AlgorithmIdentifier.java
+index 76e4718..0662f76 100644
+--- a/org/mozilla/jss/pkix/primitive/AlgorithmIdentifier.java
++++ b/org/mozilla/jss/pkix/primitive/AlgorithmIdentifier.java
+@@ -4,10 +4,12 @@
+ package org.mozilla.jss.pkix.primitive;
+ 
+ import org.mozilla.jss.asn1.*;
++import org.mozilla.jss.crypto.SignatureAlgorithm;
+ import org.mozilla.jss.util.Assert;
+ import java.io.InputStream;
+ import java.io.OutputStream;
+ import java.io.IOException;
++import java.security.NoSuchAlgorithmException;
+ 
+ public class AlgorithmIdentifier implements ASN1Value {
+ 
+@@ -100,10 +102,29 @@ public static class Template implements ASN1Template {
+         // the template should have enforced this
+         Assert._assert( seq.size() == 2 );
+ 
+-        return new AlgorithmIdentifier(
+-            (OBJECT_IDENTIFIER)seq.elementAt(0),  // OID
+-            seq.elementAt(1)                      // parameters
+-        );
++        OBJECT_IDENTIFIER algOID = (OBJECT_IDENTIFIER)seq.elementAt(0);
++        boolean allowParams = true;
++        try {
++            if (algOID.equals(SignatureAlgorithm.ECSignatureWithSHA256Digest.toOID()) ||
++                algOID.equals(SignatureAlgorithm.ECSignatureWithSHA384Digest.toOID()) ||
++                algOID.equals(SignatureAlgorithm.ECSignatureWithSHA512Digest.toOID())) {
++                allowParams = false;
++            }
++        } catch (NoSuchAlgorithmException e) {
++            // System.out.println("JSS: AlgorithmIdentifier:decode: " + e.toString());
++            // unlikely to happen; swallow it. treat it as allowParams;
++        }
++
++        if (!allowParams) {
++            return new AlgorithmIdentifier(
++                algOID  // OID
++            );
++        } else {
++            return new AlgorithmIdentifier(
++                (OBJECT_IDENTIFIER)seq.elementAt(0),  // OID
++                seq.elementAt(1)                      // parameters
++            );
++        }
+     }
+ } // end of Template
+ 
+-- 
+2.14.3
+
