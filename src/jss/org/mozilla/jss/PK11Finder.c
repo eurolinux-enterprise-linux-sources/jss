@@ -54,7 +54,9 @@ Java_org_mozilla_jss_CryptoManager_findCertByNicknameNative
     cert = JSS_PK11_findCertAndSlotFromNickname(nick, NULL, &slot);
 
     if(cert == NULL) {
-        JSS_nativeThrow(env, OBJECT_NOT_FOUND_EXCEPTION);
+        char *message = PR_smprintf("Certificate not found: %s", nick);
+        JSS_throwMsg(env, OBJECT_NOT_FOUND_EXCEPTION, message);
+        PR_smprintf_free(message);
         goto finish;
     }
 
@@ -1554,6 +1556,70 @@ finish:
 }
 
 /***********************************************************************
+ * CryptoManager.verifyCertificateNow
+ *
+ * Called by java_org_mozilla_jss_CryptoManager_verifyCertificateNowCUNative
+ */
+SECStatus verifyCertificateNow(JNIEnv *env, jobject self, jstring nickString,
+        jboolean checkSig, jint required_certificateUsage,
+         SECCertificateUsage *currUsage)
+{
+    SECStatus         rv    = SECFailure;
+    SECCertificateUsage      certificateUsage;
+    CERTCertificate   *cert=NULL;
+    char *nickname=NULL;
+
+    nickname = (char *) (*env)->GetStringUTFChars(env, nickString, NULL);
+    if( nickname == NULL ) {
+         goto finish;
+    }
+
+    certificateUsage = required_certificateUsage;
+
+    cert = CERT_FindCertByNickname(CERT_GetDefaultCertDB(), nickname);
+
+    if (cert == NULL) {
+        char *message = PR_smprintf("Certificate not found: %s", nickname);
+        JSS_throwMsg(env, OBJECT_NOT_FOUND_EXCEPTION, message);
+        PR_smprintf_free(message);
+        goto finish;
+    } else {
+    /* 0 for certificateUsage in call to CERT_VerifyCertificateNow will
+     * retrieve the current valid usage into currUsage
+     */
+        rv = CERT_VerifyCertificateNow(CERT_GetDefaultCertDB(), cert,
+            checkSig, certificateUsage, NULL, currUsage );
+        if ((rv == SECSuccess) && certificateUsage == 0x0000) {
+            if (*currUsage == 
+                ( certUsageUserCertImport |
+                certUsageVerifyCA |
+                certUsageProtectedObjectSigner |
+                certUsageAnyCA )) {
+
+              /* the cert is good for nothing 
+                 The folllowing usages cannot be verified:
+                   certUsageAnyCA
+                   certUsageProtectedObjectSigner
+                   certUsageUserCertImport
+                   certUsageVerifyCA
+                    (0x0b80) */
+                rv =SECFailure;
+            }
+        }
+    }
+
+finish:
+    if(nickname != NULL) {
+      (*env)->ReleaseStringUTFChars(env, nickString, nickname);
+    }
+    if(cert != NULL) {
+       CERT_DestroyCertificate(cert);
+    }
+
+    return rv;
+}
+
+/***********************************************************************
  * CryptoManager.verifyCertificateNowNative
  *
  * Returns JNI_TRUE if success, JNI_FALSE otherwise
@@ -1578,7 +1644,9 @@ Java_org_mozilla_jss_CryptoManager_verifyCertificateNowNative(JNIEnv *env,
     cert = CERT_FindCertByNickname(CERT_GetDefaultCertDB(), nickname);
 
     if (cert == NULL) {
-        JSS_throw(env, OBJECT_NOT_FOUND_EXCEPTION);
+        char *message = PR_smprintf("Certificate not found: %s", nickname);
+        JSS_throwMsg(env, OBJECT_NOT_FOUND_EXCEPTION, message);
+        PR_smprintf_free(message);
         goto finish;
     } else {
     /* 0 for certificateUsage in call to CERT_VerifyCertificateNow to
@@ -1601,6 +1669,31 @@ finish:
     } else {
         return JNI_FALSE;
     }
+}
+
+/***********************************************************************
+ * CryptoManager.verifyCertificateNowCUNative
+ *
+ * Returns jint which contains bits in SECCertificateUsage that reflects
+ * the cert usage(s) that the cert is good for
+ * if the cert is good for nothing, returned value is
+ *                 (0x0b80):
+ *                 certUsageUserCertImport |
+ *                 certUsageVerifyCA |
+ *                 certUsageProtectedObjectSigner |
+ *                 certUsageAnyCA
+ */
+JNIEXPORT jint JNICALL
+Java_org_mozilla_jss_CryptoManager_verifyCertificateNowCUNative(JNIEnv *env,
+        jobject self, jstring nickString, jboolean checkSig)
+{
+    SECStatus VARIABLE_MAY_NOT_BE_USED rv    = SECFailure;
+    SECCertificateUsage      currUsage = 0x0000;
+
+    rv = verifyCertificateNow(env, self, nickString, checkSig, 0, &currUsage);
+    /* rv is ignored */
+
+    return currUsage;
 }
 
 /***********************************************************************
@@ -1714,7 +1807,9 @@ Java_org_mozilla_jss_CryptoManager_verifyCertNowNative(JNIEnv *env,
     cert = CERT_FindCertByNickname(CERT_GetDefaultCertDB(), nickname);
 
     if (cert == NULL) {
-        JSS_throw(env, OBJECT_NOT_FOUND_EXCEPTION);
+        char *message = PR_smprintf("Certificate not found: %s", nickname);
+        JSS_throwMsg(env, OBJECT_NOT_FOUND_EXCEPTION, message);
+        PR_smprintf_free(message);
         goto finish;
     } else {
         rv = CERT_VerifyCertNow(CERT_GetDefaultCertDB(), cert,

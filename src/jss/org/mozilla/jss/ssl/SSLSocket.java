@@ -4,18 +4,310 @@
 
 package org.mozilla.jss.ssl;
 
-import java.lang.IllegalArgumentException;
-import java.net.*;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.InetAddress;
 import java.net.SocketException;
 import java.net.SocketTimeoutException;
-import java.io.*;
-import java.io.IOException;
-import java.util.Vector;
+import java.net.UnknownHostException;
+import java.util.ArrayList;
+import java.util.Collection;
 
 /**
  * SSL client socket.
  */
 public class SSLSocket extends java.net.Socket {
+
+    /**
+     *
+     * Note the following cipher-suites constants are not all implemented.
+     * You need to call getImplementedCiphersuites.
+     *
+     */
+
+    public final static int SSL2_RC4_128_WITH_MD5                        = 0xFF01;
+    public final static int SSL2_RC4_128_EXPORT40_WITH_MD5               = 0xFF02;
+    public final static int SSL2_RC2_128_CBC_WITH_MD5                    = 0xFF03;
+    public final static int SSL2_RC2_128_CBC_EXPORT40_WITH_MD5           = 0xFF04;
+    public final static int SSL2_IDEA_128_CBC_WITH_MD5                   = 0xFF05;
+    public final static int SSL2_DES_64_CBC_WITH_MD5                     = 0xFF06;
+    public final static int SSL2_DES_192_EDE3_CBC_WITH_MD5               = 0xFF07;
+
+    /**
+     * @deprecated Replaced with TLS_RSA_WITH_NULL_MD5.
+     */
+    @Deprecated
+    public final static int SSL3_RSA_WITH_NULL_MD5                       = 0x0001;
+    public final static int TLS_RSA_WITH_NULL_MD5                        = 0x0001;
+
+    /**
+     * @deprecated Replaced with TLS_RSA_WITH_NULL_SHA.
+     */
+    @Deprecated
+    public final static int SSL3_RSA_WITH_NULL_SHA                       = 0x0002;
+    public final static int TLS_RSA_WITH_NULL_SHA                        = 0x0002;
+
+    public final static int SSL3_RSA_EXPORT_WITH_RC4_40_MD5              = 0x0003;
+
+    /**
+     * @deprecated Replaced with TLS_RSA_WITH_RC4_128_MD5.
+     */
+    @Deprecated
+    public final static int SSL3_RSA_WITH_RC4_128_MD5                    = 0x0004;
+    public final static int TLS_RSA_WITH_RC4_128_MD5                     = 0x0004;
+
+    /**
+     * @deprecated Replaced with TLS_RSA_WITH_RC4_128_SHA.
+     */
+    @Deprecated
+    public final static int SSL3_RSA_WITH_RC4_128_SHA                    = 0x0005;
+    public final static int TLS_RSA_WITH_RC4_128_SHA                     = 0x0005;
+
+    public final static int SSL3_RSA_EXPORT_WITH_RC2_CBC_40_MD5          = 0x0006;
+
+    /**
+     * @deprecated Replaced with TLS_RSA_WITH_IDEA_CBC_SHA.
+     */
+    @Deprecated
+    public final static int SSL3_RSA_WITH_IDEA_CBC_SHA                   = 0x0007;
+    public final static int TLS_RSA_WITH_IDEA_CBC_SHA                    = 0x0007;
+
+    public final static int SSL3_RSA_EXPORT_WITH_DES40_CBC_SHA           = 0x0008;
+
+    /**
+     * @deprecated Replaced with TLS_RSA_WITH_DES_CBC_SHA.
+     */
+    @Deprecated
+    public final static int SSL3_RSA_WITH_DES_CBC_SHA                    = 0x0009;
+    public final static int TLS_RSA_WITH_DES_CBC_SHA                     = 0x0009;
+
+    /**
+     * @deprecated Replaced with TLS_RSA_WITH_3DES_EDE_CBC_SHA.
+     */
+    @Deprecated
+    public final static int SSL3_RSA_WITH_3DES_EDE_CBC_SHA               = 0x000a;
+    public final static int TLS_RSA_WITH_3DES_EDE_CBC_SHA                = 0x000a;
+
+    public final static int SSL3_DH_DSS_EXPORT_WITH_DES40_CBC_SHA        = 0x000b;
+
+    /**
+     * @deprecated Replaced with TLS_DH_DSS_WITH_DES_CBC_SHA.
+     */
+    @Deprecated
+    public final static int SSL3_DH_DSS_WITH_DES_CBC_SHA                 = 0x000c;
+    public final static int TLS_DH_DSS_WITH_DES_CBC_SHA                  = 0x000c;
+
+    /**
+     * @deprecated Replaced with TLS_DH_DSS_WITH_3DES_EDE_CBC_SHA.
+     */
+    @Deprecated
+    public final static int SSL3_DH_DSS_WITH_3DES_EDE_CBC_SHA            = 0x000d;
+    public final static int TLS_DH_DSS_WITH_3DES_EDE_CBC_SHA             = 0x000d;
+
+    public final static int SSL3_DH_RSA_EXPORT_WITH_DES40_CBC_SHA        = 0x000e;
+
+    /**
+     * @deprecated Replaced with TLS_DH_RSA_WITH_DES_CBC_SHA.
+     */
+    @Deprecated
+    public final static int SSL3_DH_RSA_WITH_DES_CBC_SHA                 = 0x000f;
+    public final static int TLS_DH_RSA_WITH_DES_CBC_SHA                  = 0x000f;
+
+    /**
+     * @deprecated Replaced with TLS_DH_RSA_WITH_3DES_EDE_CBC_SHA.
+     */
+    @Deprecated
+    public final static int SSL3_DH_RSA_WITH_3DES_EDE_CBC_SHA            = 0x0010;
+    public final static int TLS_DH_RSA_WITH_3DES_EDE_CBC_SHA             = 0x0010;
+
+    public final static int SSL3_DHE_DSS_EXPORT_WITH_DES40_CBC_SHA       = 0x0011;
+
+    /**
+     * @deprecated Replaced with TLS_DHE_DSS_WITH_DES_CBC_SHA.
+     */
+    @Deprecated
+    public final static int SSL3_DHE_DSS_WITH_DES_CBC_SHA                = 0x0012;
+    public final static int TLS_DHE_DSS_WITH_DES_CBC_SHA                 = 0x0012;
+
+    /**
+     * @deprecated Replaced with TLS_DHE_DSS_WITH_3DES_EDE_CBC_SHA.
+     */
+    @Deprecated
+    public final static int SSL3_DHE_DSS_WITH_3DES_EDE_CBC_SHA           = 0x0013;
+    public final static int TLS_DHE_DSS_WITH_3DES_EDE_CBC_SHA            = 0x0013;
+
+    public final static int SSL3_DHE_RSA_EXPORT_WITH_DES40_CBC_SHA       = 0x0014;
+
+    /**
+     * @deprecated Replaced with TLS_DHE_RSA_WITH_DES_CBC_SHA.
+     */
+    @Deprecated
+    public final static int SSL3_DHE_RSA_WITH_DES_CBC_SHA                = 0x0015;
+    public final static int TLS_DHE_RSA_WITH_DES_CBC_SHA                 = 0x0015;
+
+    /**
+     * @deprecated Replaced with TLS_DHE_RSA_WITH_3DES_EDE_CBC_SHA.
+     */
+    @Deprecated
+    public final static int SSL3_DHE_RSA_WITH_3DES_EDE_CBC_SHA           = 0x0016;
+    public final static int TLS_DHE_RSA_WITH_3DES_EDE_CBC_SHA            = 0x0016;
+
+    public final static int SSL3_DH_ANON_EXPORT_WITH_RC4_40_MD5          = 0x0017;
+
+    /**
+     * @deprecated Replaced with TLS_DH_anon_WITH_RC4_128_MD5.
+     */
+    @Deprecated
+    public final static int SSL3_DH_ANON_WITH_RC4_128_MD5                = 0x0018;
+    public final static int TLS_DH_anon_WITH_RC4_128_MD5                 = 0x0018;
+
+    public final static int SSL3_DH_ANON_EXPORT_WITH_DES40_CBC_SHA       = 0x0019;
+
+    /**
+     * @deprecated Replaced with TLS_DH_anon_WITH_DES_CBC_SHA.
+     */
+    @Deprecated
+    public final static int SSL3_DH_ANON_WITH_DES_CBC_SHA                = 0x001a;
+    public final static int TLS_DH_anon_WITH_DES_CBC_SHA                 = 0x001a;
+
+    /**
+     * @deprecated Replaced with TLS_DH_anon_WITH_3DES_EDE_CBC_SHA.
+     */
+    @Deprecated
+    public final static int SSL3_DH_ANON_WITH_3DES_EDE_CBC_SHA           = 0x001b;
+    public final static int TLS_DH_anon_WITH_3DES_EDE_CBC_SHA            = 0x001b;
+
+    /**
+     * @deprecated As of NSS 3.11, FORTEZZA is no longer supported.
+     */
+    @Deprecated
+    public final static int SSL3_FORTEZZA_DMS_WITH_NULL_SHA              = 0x001c;
+
+    /**
+     * @deprecated As of NSS 3.11, FORTEZZA is no longer supported.
+     */
+    @Deprecated
+    public final static int SSL3_FORTEZZA_DMS_WITH_FORTEZZA_CBC_SHA      = 0x001d;
+
+    /**
+     * @deprecated As of NSS 3.11, FORTEZZA is no longer supported.
+     */
+    @Deprecated
+    public final static int SSL3_FORTEZZA_DMS_WITH_RC4_128_SHA           = 0x001e;
+
+    public final static int SSL_RSA_FIPS_WITH_3DES_EDE_CBC_SHA           = 0xfeff;
+    public final static int SSL_RSA_FIPS_WITH_DES_CBC_SHA                = 0xfefe;
+
+    public final static int TLS_RSA_EXPORT1024_WITH_DES_CBC_SHA          = 0x0062;
+    public final static int TLS_RSA_EXPORT1024_WITH_RC4_56_SHA           = 0x0064;
+
+    public final static int TLS_DHE_DSS_EXPORT1024_WITH_DES_CBC_SHA      = 0x0063;
+    public final static int TLS_DHE_DSS_EXPORT1024_WITH_RC4_56_SHA       = 0x0065;
+    public final static int TLS_DHE_DSS_WITH_RC4_128_SHA                 = 0x0066;
+    public final static int TLS_DHE_RSA_WITH_AES_128_CBC_SHA256          = 0x0067;
+    public final static int TLS_DHE_RSA_WITH_AES_256_CBC_SHA256          = 0x006B;
+
+    // New TLS cipher suites in NSS 3.4
+    public final static int TLS_RSA_WITH_AES_128_CBC_SHA                 = 0x002F;
+    public final static int TLS_DH_DSS_WITH_AES_128_CBC_SHA              = 0x0030;
+    public final static int TLS_DH_RSA_WITH_AES_128_CBC_SHA              = 0x0031;
+    public final static int TLS_DHE_DSS_WITH_AES_128_CBC_SHA             = 0x0032;
+    public final static int TLS_DHE_RSA_WITH_AES_128_CBC_SHA             = 0x0033;
+
+    /**
+     * @deprecated Replaced with TLS_DH_anon_WITH_AES_128_CBC_SHA.
+     */
+    @Deprecated
+    public final static int TLS_DH_ANON_WITH_AES_128_CBC_SHA             = 0x0034;
+    public final static int TLS_DH_anon_WITH_AES_128_CBC_SHA             = 0x0034;
+
+    public final static int TLS_RSA_WITH_AES_256_CBC_SHA                 = 0x0035;
+    public final static int TLS_DH_DSS_WITH_AES_256_CBC_SHA              = 0x0036;
+    public final static int TLS_DH_RSA_WITH_AES_256_CBC_SHA              = 0x0037;
+    public final static int TLS_DHE_DSS_WITH_AES_256_CBC_SHA             = 0x0038;
+    public final static int TLS_DHE_RSA_WITH_AES_256_CBC_SHA             = 0x0039;
+
+    /**
+     * @deprecated Replaced with TLS_DH_anon_WITH_AES_256_CBC_SHA.
+     */
+    @Deprecated
+    public final static int TLS_DH_ANON_WITH_AES_256_CBC_SHA             = 0x003A;
+    public final static int TLS_DH_anon_WITH_AES_256_CBC_SHA             = 0x003A;
+
+    public final static int TLS_RSA_WITH_NULL_SHA256                     = 0x003B;
+    public final static int TLS_RSA_WITH_AES_128_CBC_SHA256              = 0x003C;
+    public final static int TLS_RSA_WITH_AES_256_CBC_SHA256              = 0x003D;
+
+    public final static int TLS_RSA_WITH_CAMELLIA_128_CBC_SHA            = 0x0041;
+    public final static int TLS_DH_DSS_WITH_CAMELLIA_128_CBC_SHA         = 0x0042;
+    public final static int TLS_DH_RSA_WITH_CAMELLIA_128_CBC_SHA         = 0x0043;
+    public final static int TLS_DHE_DSS_WITH_CAMELLIA_128_CBC_SHA        = 0x0044;
+    public final static int TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA        = 0x0045;
+
+    /**
+     * @deprecated Replaced with TLS_DH_anon_WITH_CAMELLIA_128_CBC_SHA.
+     */
+    @Deprecated
+    public final static int TLS_DH_ANON_WITH_CAMELLIA_128_CBC_SHA        = 0x0046;
+    public final static int TLS_DH_anon_WITH_CAMELLIA_128_CBC_SHA        = 0x0046;
+
+    public final static int TLS_RSA_WITH_CAMELLIA_256_CBC_SHA            = 0x0084;
+    public final static int TLS_DH_DSS_WITH_CAMELLIA_256_CBC_SHA         = 0x0085;
+    public final static int TLS_DH_RSA_WITH_CAMELLIA_256_CBC_SHA         = 0x0086;
+    public final static int TLS_DHE_DSS_WITH_CAMELLIA_256_CBC_SHA        = 0x0087;
+    public final static int TLS_DHE_RSA_WITH_CAMELLIA_256_CBC_SHA        = 0x0088;
+
+    /**
+     * @deprecated Replaced with TLS_DH_anon_WITH_CAMELLIA_256_CBC_SHA.
+     */
+    @Deprecated
+    public final static int TLS_DH_ANON_WITH_CAMELLIA_256_CBC_SHA        = 0x0089;
+    public final static int TLS_DH_anon_WITH_CAMELLIA_256_CBC_SHA        = 0x0089;
+
+    public final static int TLS_RSA_WITH_SEED_CBC_SHA                    = 0x0096;
+
+    public final static int TLS_RSA_WITH_AES_128_GCM_SHA256              = 0x009C;
+    public final static int TLS_DHE_RSA_WITH_AES_128_GCM_SHA256          = 0x009E;
+    public final static int TLS_DHE_DSS_WITH_AES_128_GCM_SHA256          = 0x00A2;
+
+    public final static int TLS_ECDH_ECDSA_WITH_NULL_SHA                 = 0xc001;
+    public final static int TLS_ECDH_ECDSA_WITH_RC4_128_SHA              = 0xc002;
+    public final static int TLS_ECDH_ECDSA_WITH_3DES_EDE_CBC_SHA         = 0xc003;
+    public final static int TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA          = 0xc004;
+    public final static int TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA          = 0xc005;
+
+    public final static int TLS_ECDHE_ECDSA_WITH_NULL_SHA                = 0xc006;
+    public final static int TLS_ECDHE_ECDSA_WITH_RC4_128_SHA             = 0xc007;
+    public final static int TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA        = 0xc008;
+    public final static int TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA         = 0xc009;
+    public final static int TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA         = 0xc00a;
+
+    public final static int TLS_ECDH_RSA_WITH_NULL_SHA                   = 0xc00b;
+    public final static int TLS_ECDH_RSA_WITH_RC4_128_SHA                = 0xc00c;
+    public final static int TLS_ECDH_RSA_WITH_3DES_EDE_CBC_SHA           = 0xc00d;
+    public final static int TLS_ECDH_RSA_WITH_AES_128_CBC_SHA            = 0xc00e;
+    public final static int TLS_ECDH_RSA_WITH_AES_256_CBC_SHA            = 0xc00f;
+
+    public final static int TLS_ECDHE_RSA_WITH_NULL_SHA                  = 0xc010;
+    public final static int TLS_ECDHE_RSA_WITH_RC4_128_SHA               = 0xc011;
+    public final static int TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA          = 0xc012;
+    public final static int TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA           = 0xc013;
+    public final static int TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA           = 0xc014;
+
+    public final static int TLS_ECDH_anon_WITH_NULL_SHA                  = 0xc015;
+    public final static int TLS_ECDH_anon_WITH_RC4_128_SHA               = 0xc016;
+    public final static int TLS_ECDH_anon_WITH_3DES_EDE_CBC_SHA          = 0xc017;
+    public final static int TLS_ECDH_anon_WITH_AES_128_CBC_SHA           = 0xc018;
+    public final static int TLS_ECDH_anon_WITH_AES_256_CBC_SHA           = 0xc019;
+
+    public final static int TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256      = 0xc023;
+    public final static int TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256        = 0xc027;
+
+    public final static int TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256      = 0xc02B;
+    public final static int TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256       = 0xc02D;
+    public final static int TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256        = 0xc02F;
+    public final static int TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256         = 0xc031;
 
     /*
      * Locking strategy of SSLSocket
@@ -41,13 +333,13 @@ public class SSLSocket extends java.net.Socket {
     private boolean open = false;
     private boolean handshakeAsClient = true;
     private SocketBase base = new SocketBase();
-    static final public int SSL_REQUIRE_NEVER =  
+    static final public int SSL_REQUIRE_NEVER =
            org.mozilla.jss.ssl.SocketBase.SSL_REQUIRE_NEVER;
-    static final public int SSL_REQUIRE_ALWAYS = 
+    static final public int SSL_REQUIRE_ALWAYS =
            org.mozilla.jss.ssl.SocketBase.SSL_REQUIRE_ALWAYS;
-    static final public int SSL_REQUIRE_FIRST_HANDSHAKE = 
+    static final public int SSL_REQUIRE_FIRST_HANDSHAKE =
            org.mozilla.jss.ssl.SocketBase.SSL_REQUIRE_FIRST_HANDSHAKE;
-    static final public int SSL_REQUIRE_NO_ERROR = 
+    static final public int SSL_REQUIRE_NO_ERROR =
            org.mozilla.jss.ssl.SocketBase.SSL_REQUIRE_NO_ERROR;
     static final public int SSL_RENEGOTIATE_NEVER =
            org.mozilla.jss.ssl.SocketBase.SSL_RENEGOTIATE_NEVER;
@@ -57,6 +349,9 @@ public class SSLSocket extends java.net.Socket {
            org.mozilla.jss.ssl.SocketBase.SSL_RENEGOTIATE_UNRESTRICTED;
     static final public int SSL_RENEGOTIATE_TRANSITIONAL  =
            org.mozilla.jss.ssl.SocketBase.SSL_RENEGOTIATE_TRANSITIONAL;
+
+    private Collection<SSLSocketListener> socketListeners = new ArrayList<>();
+    private Collection<SSLHandshakeCompletedListener> handshakeCompletedListeners = new ArrayList<>();
 
     /**
      * For sockets that get created by accept().
@@ -411,12 +706,12 @@ public class SSLSocket extends java.net.Socket {
      */
     public native void setReceiveBufferSize(int size) throws SocketException;
 
-    /** 
+    /**
      * Returnst he size (in bytes) of the receive buffer.
      */
     public native int getReceiveBufferSize() throws SocketException;
 
-    /** 
+    /**
      * Closes this socket.
      */
     public void close() throws IOException {
@@ -458,37 +753,50 @@ public class SSLSocket extends java.net.Socket {
     ////////////////////////////////////////////////////////////////////
     // SSL-specific stuff
     ////////////////////////////////////////////////////////////////////
-    private Vector handshakeCompletedListeners = new Vector();
+
+    public void addSocketListener(SSLSocketListener listener) {
+        socketListeners.add(listener);
+        addHandshakeCompletedListener(listener);
+    }
+
+    public void removeSocketListener(SSLSocketListener listener) {
+        socketListeners.remove(listener);
+        removeHandshakeCompletedListener(listener);
+    }
+
+    private void fireAlertReceivedEvent(SSLAlertEvent event) {
+        for (SSLSocketListener listener : socketListeners) {
+            listener.alertReceived(event);
+        }
+    }
+
+    private void fireAlertSentEvent(SSLAlertEvent event) {
+        for (SSLSocketListener listener : socketListeners) {
+            listener.alertSent(event);
+        }
+    }
 
     /**
      * Adds a listener to be notified when an SSL handshake completes.
      */
-    public void addHandshakeCompletedListener(SSLHandshakeCompletedListener l) {
-        handshakeCompletedListeners.addElement(l);
+    public void addHandshakeCompletedListener(SSLHandshakeCompletedListener listener) {
+        handshakeCompletedListeners.add(listener);
     }
 
     /**
      * Removes a previously registered listener for handshake completion.
      */
-    public void removeHandshakeCompletedListener(
-            SSLHandshakeCompletedListener l) {
-        handshakeCompletedListeners.removeElement(l);
+    public void removeHandshakeCompletedListener(SSLHandshakeCompletedListener listener) {
+        handshakeCompletedListeners.remove(listener);
     }
 
     private void notifyAllHandshakeListeners() {
-        SSLHandshakeCompletedEvent event =
-            new SSLHandshakeCompletedEvent(this);
+        SSLHandshakeCompletedEvent event = new SSLHandshakeCompletedEvent(this);
 
-        /* XXX NOT THREAD SAFE */
-        int i;
-        for( i=0; i < handshakeCompletedListeners.size(); ++i) {
-            SSLHandshakeCompletedListener l =
-                (SSLHandshakeCompletedListener)
-                 handshakeCompletedListeners.elementAt(i);
-            l.handshakeCompleted(event);
+        for (SSLHandshakeCompletedListener listener : handshakeCompletedListeners) {
+            listener.handshakeCompleted(event);
         }
     }
-               
 
     /**
      * Enables SSL v2 on this socket. It is enabled  by default, unless the
@@ -534,10 +842,10 @@ public class SSLSocket extends java.net.Socket {
     static public void enableTLSDefault(boolean enable) throws SocketException{
         setSSLDefaultOption(SocketBase.SSL_ENABLE_TLS, enable);
     }
- 
+
     /**
-     * Enables Session tickets on this socket. It is disabled by default, 
-     * unless the default has been changed with 
+     * Enables Session tickets on this socket. It is disabled by default,
+     * unless the default has been changed with
      * <code>enableSessionTicketsDefault</code>.
      */
     public void enableSessionTickets(boolean enable) throws SocketException {
@@ -547,7 +855,7 @@ public class SSLSocket extends java.net.Socket {
     /**
      * Sets the default for Session Tickets for all new sockets.
      */
-    static public void enableSessionTicketsDefault(boolean enable) 
+    static public void enableSessionTicketsDefault(boolean enable)
         throws SocketException{
         setSSLDefaultOption(SocketBase.SSL_ENABLE_SESSION_TICKETS, enable);
     }
@@ -643,26 +951,26 @@ public class SSLSocket extends java.net.Socket {
 
     /**
      * Enable rollback detection for this socket.
-     * It is enabled by default, unless the default has been changed 
+     * It is enabled by default, unless the default has been changed
      * with <code>enableRollbackDetectionDefault</code>.
      */
-    public void enableRollbackDetection(boolean enable) 
-        throws SocketException 
+    public void enableRollbackDetection(boolean enable)
+        throws SocketException
     {
         base.enableRollbackDetection(enable);
     }
-    
+
     /**
      * Sets the default rollback detection for all new sockets.
      */
-    static void enableRollbackDetectionDefault(boolean enable) 
-        throws SocketException 
+    static void enableRollbackDetectionDefault(boolean enable)
+        throws SocketException
     {
         setSSLDefaultOption(SocketBase.SSL_ROLLBACK_DETECTION, enable);
     }
-    
+
     /**
-     * This option, enableStepDown, is concerned with the generation 
+     * This option, enableStepDown, is concerned with the generation
      * of step-down keys which are used with export suites.
      * If the server cert's public key is 512 bits or less
      * this option is ignored because step-down keys don't
@@ -673,15 +981,15 @@ public class SSLSocket extends java.net.Socket {
      * enable=false: don't generate step-down keys; disable
      * export cipher suites
      *
-     * This option is enabled by default; unless the default has  
+     * This option is enabled by default; unless the default has
      * been changed with <code>SSLSocket.enableStepDownDefault</code>.
      */
     public void enableStepDown(boolean enable) throws SocketException {
         base.enableStepDown(enable);
     }
     /**
-     * This option, enableStepDownDefault, is concerned with the  
-     * generation of step-down keys which are used with export suites. 
+     * This option, enableStepDownDefault, is concerned with the
+     * generation of step-down keys which are used with export suites.
      * This options will set the default for all sockets.
      * If the server cert's public key is 512 bits of less,
      * this option is ignored because step-down keys don't
@@ -694,92 +1002,92 @@ public class SSLSocket extends java.net.Socket {
      *
      * This option is enabled by default for all sockets.
      */
-    static void enableStepDownDefault(boolean enable) 
-    throws SocketException 
+    static void enableStepDownDefault(boolean enable)
+    throws SocketException
     {
         setSSLDefaultOption(SocketBase.SSL_NO_STEP_DOWN, enable);
     }
 
     /**
-     * Enable simultaneous read/write by separate read and write threads 
+     * Enable simultaneous read/write by separate read and write threads
      * (full duplex) for this socket.
-     * It is disabled by default, unless the default has been changed 
+     * It is disabled by default, unless the default has been changed
      * with <code>enableFDXDefault</code>.
      */
-    public void enableFDX(boolean enable) 
-    throws SocketException 
+    public void enableFDX(boolean enable)
+    throws SocketException
     {
         base.enableFDX(enable);
     }
-    
+
     /**
-     * Sets the default to permit simultaneous read/write 
+     * Sets the default to permit simultaneous read/write
      * by separate read and write threads (full duplex)
      * for all new sockets.
      */
-    static void enableFDXDefault(boolean enable) 
-    throws SocketException 
+    static void enableFDXDefault(boolean enable)
+    throws SocketException
     {
         setSSLDefaultOption(SocketBase.SSL_ENABLE_FDX, enable);
     }
 
     /**
      * Enable sending v3 client hello in v2 format for this socket.
-     * It is enabled by default, unless the default has been changed 
+     * It is enabled by default, unless the default has been changed
      * with <code>enableV2CompatibleHelloDefault</code>.
      */
-    public void enableV2CompatibleHello(boolean enable) 
-    throws SocketException 
+    public void enableV2CompatibleHello(boolean enable)
+    throws SocketException
     {
         base.enableV2CompatibleHello(enable);
     }
-    
-    /**    
+
+    /**
      * Sets the default to send v3 client hello in v2 format
      * for all new sockets.
      */
-    static void enableV2CompatibleHelloDefault(boolean enable) 
-    throws SocketException 
+    static void enableV2CompatibleHelloDefault(boolean enable)
+    throws SocketException
     {
         setSSLDefaultOption(SocketBase.SSL_V2_COMPATIBLE_HELLO, enable);
     }
-    
+
     /**
      * @return a String listing the current SSLOptions for this SSLSocket.
      */
     public String getSSLOptions() {
         return base.getSSLOptions();
     }
-    
+
     /**
-     * 
-     * @param option 
-     * @return 0 for option disabled 1 for option enabled. 
+     *
+     * @param option
+     * @return 0 for option disabled 1 for option enabled.
      */
     static private native int getSSLDefaultOption(int option)
         throws SocketException;
 
     /**
-     * 
+     *
      * @return a String listing  the Default SSLOptions for all SSLSockets.
      */
     static public String getSSLDefaultOptions() {
         StringBuffer buf = new StringBuffer();
         try {
             buf.append("Default Options configured for all SSLSockets: ");
-            buf.append("\nSSL_ENABLE_SSL2" + 
+            buf.append("\nSSL_ENABLE_SSL2" +
                 ((getSSLDefaultOption(SocketBase.SSL_ENABLE_SSL2) != 0)
                 ? "=on" :  "=off"));
-            buf.append("\nSSL_ENABLE_SSL3"  + 
-                ((getSSLDefaultOption(SocketBase.SSL_ENABLE_SSL3) != 0) 
+            buf.append("\nSSL_ENABLE_SSL3"  +
+                ((getSSLDefaultOption(SocketBase.SSL_ENABLE_SSL3) != 0)
                 ? "=on" :  "=off"));
-            buf.append("\nSSL_ENABLE_TLS"  + 
-                ((getSSLDefaultOption(SocketBase.SSL_ENABLE_TLS) != 0) 
+            buf.append("\nSSL_ENABLE_TLS"  +
+                ((getSSLDefaultOption(SocketBase.SSL_ENABLE_TLS) != 0)
                 ? "=on" :  "=off"));
             buf.append("\nSSL_ENABLE_SESSION_TICKETS"  +
                 ((getSSLDefaultOption(SocketBase.SSL_ENABLE_SESSION_TICKETS)
                 != 0) ? "=on" :  "=off"));
-            buf.append("\nSSL_REQUIRE_CERTIFICATE"); 
+            buf.append("\nSSL_REQUIRE_CERTIFICATE");
             switch (getSSLDefaultOption(SocketBase.SSL_REQUIRE_CERTIFICATE)) {
                 case 0:
                     buf.append("=Never");
@@ -797,23 +1105,23 @@ public class SSLSocket extends java.net.Socket {
                    buf.append("=Report JSS Bug this option has a status.");
                    break;
             } //end switch
-            buf.append("\nSSL_REQUEST_CERTIFICATE"  + 
-                ((getSSLDefaultOption(SocketBase.SSL_REQUEST_CERTIFICATE) != 0) 
+            buf.append("\nSSL_REQUEST_CERTIFICATE"  +
+                ((getSSLDefaultOption(SocketBase.SSL_REQUEST_CERTIFICATE) != 0)
                 ? "=on" :  "=off"));
-            buf.append("\nSSL_NO_CACHE"  + 
+            buf.append("\nSSL_NO_CACHE"  +
                 ((getSSLDefaultOption(SocketBase.SSL_NO_CACHE) != 0)
                 ? "=on" :  "=off"));
-            buf.append("\nSSL_ROLLBACK_DETECTION"  + 
+            buf.append("\nSSL_ROLLBACK_DETECTION"  +
                 ((getSSLDefaultOption(SocketBase.SSL_ROLLBACK_DETECTION) != 0)
                 ? "=on" :  "=off"));
-            buf.append("\nSSL_NO_STEP_DOWN"  + 
+            buf.append("\nSSL_NO_STEP_DOWN"  +
                 ((getSSLDefaultOption(SocketBase.SSL_NO_STEP_DOWN) != 0)
                 ? "=on" :  "=off"));
-            buf.append("\nSSL_ENABLE_FDX"  + 
+            buf.append("\nSSL_ENABLE_FDX"  +
                 ((getSSLDefaultOption(SocketBase.SSL_ENABLE_FDX) != 0)
                 ? "=on" :  "=off"));
-            buf.append("\nSSL_V2_COMPATIBLE_HELLO"  + 
-                ((getSSLDefaultOption(SocketBase.SSL_V2_COMPATIBLE_HELLO) != 0) 
+            buf.append("\nSSL_V2_COMPATIBLE_HELLO"  +
+                ((getSSLDefaultOption(SocketBase.SSL_V2_COMPATIBLE_HELLO) != 0)
                 ? "=on" :  "=off"));
             buf.append("\nSSL_ENABLE_SESSION_TICKETS"  +
                 ((getSSLDefaultOption(SocketBase.SSL_ENABLE_SESSION_TICKETS)
@@ -845,7 +1153,7 @@ public class SSLSocket extends java.net.Socket {
         }
         return buf.toString();
     }
-    
+
     /**
      *  Sets whether the socket requires client authentication from the remote
      *  peer. If requestClientAuth() has not already been called, this
@@ -863,19 +1171,19 @@ public class SSLSocket extends java.net.Socket {
      *  Sets whether the socket requires client authentication from the remote
      *  peer. If requestClientAuth() has not already been called, this method
      *  will tell the socket to request client auth as well as requiring it.
-     *  This is only meaningful for the server end of the SSL connection. 
-     *  During the next handshake, the remote peer will be asked to 
+     *  This is only meaningful for the server end of the SSL connection.
+     *  During the next handshake, the remote peer will be asked to
      *  authenticate itself with the requirement that was set.
      *
-     *  @param mode One of:  SSLSocket.SSL_REQUIRE_NEVER, 
-     *                       SSLSocket.SSL_REQUIRE_ALWAYS, 
-     *                       SSLSocket.SSL_REQUIRE_FIRST_HANDSHAKE, 
+     *  @param mode One of:  SSLSocket.SSL_REQUIRE_NEVER,
+     *                       SSLSocket.SSL_REQUIRE_ALWAYS,
+     *                       SSLSocket.SSL_REQUIRE_FIRST_HANDSHAKE,
      *                       SSLSocket.SSL_REQUIRE_NO_ERROR
      */
     public void requireClientAuth(int mode)
             throws SocketException
     {
-        if (mode >= SocketBase.SSL_REQUIRE_NEVER && 
+        if (mode >= SocketBase.SSL_REQUIRE_NEVER &&
             mode <= SocketBase.SSL_REQUIRE_NO_ERROR) {
             base.requireClientAuth(mode);
         } else {
@@ -900,15 +1208,15 @@ public class SSLSocket extends java.net.Socket {
      *  All subsequently created sockets will use this default setting
      *  This is only meaningful for the server end of the SSL connection.
      *
-     *  @param mode One of:  SSLSocket.SSL_REQUIRE_NEVER, 
-     *                       SSLSocket.SSL_REQUIRE_ALWAYS, 
-     *                       SSLSocket.SSL_REQUIRE_FIRST_HANDSHAKE, 
+     *  @param mode One of:  SSLSocket.SSL_REQUIRE_NEVER,
+     *                       SSLSocket.SSL_REQUIRE_ALWAYS,
+     *                       SSLSocket.SSL_REQUIRE_FIRST_HANDSHAKE,
      *                       SSLSocket.SSL_REQUIRE_NO_ERROR
      */
     static public void requireClientAuthDefault(int mode)
             throws SocketException
     {
-        if (mode >= SocketBase.SSL_REQUIRE_NEVER && 
+        if (mode >= SocketBase.SSL_REQUIRE_NEVER &&
             mode <= SocketBase.SSL_REQUIRE_NO_ERROR) {
             setSSLDefaultOption(SocketBase.SSL_REQUEST_CERTIFICATE, true);
             setSSLDefaultOptionMode(SocketBase.SSL_REQUIRE_CERTIFICATE,mode);
@@ -924,7 +1232,7 @@ public class SSLSocket extends java.net.Socket {
      */
     public native void forceHandshake() throws SocketException;
 
-    /** 
+    /**
      * Determines whether this end of the socket is the client or the server
      *  for purposes of the SSL protocol. By default, it is the client.
      * @param b true if this end of the socket is the SSL slient, false
@@ -1031,7 +1339,7 @@ public class SSLSocket extends java.net.Socket {
         base.useCache(b);
     }
 
-    /** 
+    /**
      * Sets the default setting for use of the session cache.
      */
     public void useCacheDefault(boolean b) throws SocketException {
@@ -1090,7 +1398,7 @@ public class SSLSocket extends java.net.Socket {
         setSSLVersionRangeDefault(ssl_variant.getEnum(), range.getMinEnum(), range.getMaxEnum());
     }
 
-    /** 
+    /**
      * Sets SSL Version Range Default
      */
     private static native void setSSLVersionRangeDefault(int ssl_variant, int min, int max)
@@ -1102,13 +1410,13 @@ public class SSLSocket extends java.net.Socket {
         setSSLDefaultOption(option, on ? 1 : 0);
     }
 
-    /** 
+    /**
      * Sets SSL Default options that have simple enable/disable values.
      */
     private static native void setSSLDefaultOption(int option, int on)
         throws SocketException;
 
-    /** 
+    /**
      * Set SSL default options that have more modes than enable/disable.
      */
     private static native void setSSLDefaultOptionMode(int option, int mode)
@@ -1141,19 +1449,19 @@ public class SSLSocket extends java.net.Socket {
     native int socketAvailable()
         throws IOException;
 
-    int read(byte[] b, int off, int len) 
+    int read(byte[] b, int off, int len)
         throws IOException, SocketTimeoutException {
         synchronized (readLock) {
             synchronized (this) {
                 if ( isClosed ) { /* abort read if socket is closed */
                     throw new IOException(
-                        "Socket has been closed, and cannot be reused."); 
+                        "Socket has been closed, and cannot be reused.");
                 }
-                inRead = true;            
+                inRead = true;
             }
             int iRet;
             try {
-                iRet = socketRead(b, off, len, base.getTimeout()); 
+                iRet = socketRead(b, off, len, base.getTimeout());
             } catch (SocketTimeoutException ste) {
                 throw new SocketTimeoutException(
                     "SocketTimeoutException cannot read on socket");
@@ -1169,13 +1477,13 @@ public class SSLSocket extends java.net.Socket {
         }
     }
 
-    void write(byte[] b, int off, int len) 
+    void write(byte[] b, int off, int len)
         throws IOException, SocketTimeoutException {
         synchronized (writeLock) {
             synchronized (this) {
                 if ( isClosed ) { /* abort write if socket is closed */
                     throw new IOException(
-                        "Socket has been closed, and cannot be reused."); 
+                        "Socket has been closed, and cannot be reused.");
                 }
                 inWrite = true;
             }
@@ -1284,9 +1592,9 @@ public class SSLSocket extends java.net.Socket {
     }
 
      /**
-     * isFipsCipherSuite 
+     * isFipsCipherSuite
      *
-     *@return true if the ciphersuite isFIPS, false otherwise 
+     *@return true if the ciphersuite isFIPS, false otherwise
      */
     public static boolean isFipsCipherSuite(int ciphersuite) throws SocketException {
         return isFipsCipherSuiteNative(ciphersuite);
@@ -1302,149 +1610,4 @@ public class SSLSocket extends java.net.Socket {
      * <tt>TLS_RSA_WITH_AES_128_CBC_SHA</tt>).
      */
     public static native int[] getImplementedCipherSuites();
-
-    /**
-     *
-     * Note the following cipher-suites constants are not all implemented.
-     * You need to call getImplementedCiphersuites.
-     *
-     */
-
-    public final static int SSL2_RC4_128_WITH_MD5                  = 0xFF01;
-    public final static int SSL2_RC4_128_EXPORT40_WITH_MD5         = 0xFF02;
-    public final static int SSL2_RC2_128_CBC_WITH_MD5              = 0xFF03;
-    public final static int SSL2_RC2_128_CBC_EXPORT40_WITH_MD5     = 0xFF04;
-    public final static int SSL2_IDEA_128_CBC_WITH_MD5             = 0xFF05;
-    public final static int SSL2_DES_64_CBC_WITH_MD5               = 0xFF06;
-    public final static int SSL2_DES_192_EDE3_CBC_WITH_MD5         = 0xFF07;
-
-    public final static int SSL3_RSA_WITH_NULL_MD5                 = 0x0001;
-    public final static int SSL3_RSA_WITH_NULL_SHA                 = 0x0002;
-    public final static int SSL3_RSA_EXPORT_WITH_RC4_40_MD5        = 0x0003;
-    public final static int SSL3_RSA_WITH_RC4_128_MD5              = 0x0004;
-    public final static int SSL3_RSA_WITH_RC4_128_SHA              = 0x0005;
-    public final static int SSL3_RSA_EXPORT_WITH_RC2_CBC_40_MD5    = 0x0006;
-    public final static int SSL3_RSA_WITH_IDEA_CBC_SHA             = 0x0007;
-    public final static int SSL3_RSA_EXPORT_WITH_DES40_CBC_SHA     = 0x0008;
-    public final static int SSL3_RSA_WITH_DES_CBC_SHA              = 0x0009;
-    public final static int SSL3_RSA_WITH_3DES_EDE_CBC_SHA         = 0x000a;
-
-    public final static int SSL3_DH_DSS_EXPORT_WITH_DES40_CBC_SHA  = 0x000b;
-    public final static int SSL3_DH_DSS_WITH_DES_CBC_SHA           = 0x000c;
-    public final static int SSL3_DH_DSS_WITH_3DES_EDE_CBC_SHA      = 0x000d;
-    public final static int SSL3_DH_RSA_EXPORT_WITH_DES40_CBC_SHA  = 0x000e;
-    public final static int SSL3_DH_RSA_WITH_DES_CBC_SHA           = 0x000f;
-    public final static int SSL3_DH_RSA_WITH_3DES_EDE_CBC_SHA      = 0x0010;
-
-    public final static int SSL3_DHE_DSS_EXPORT_WITH_DES40_CBC_SHA = 0x0011;
-    public final static int SSL3_DHE_DSS_WITH_DES_CBC_SHA          = 0x0012;
-    public final static int SSL3_DHE_DSS_WITH_3DES_EDE_CBC_SHA     = 0x0013;
-    public final static int SSL3_DHE_RSA_EXPORT_WITH_DES40_CBC_SHA = 0x0014;
-    public final static int SSL3_DHE_RSA_WITH_DES_CBC_SHA          = 0x0015;
-    public final static int SSL3_DHE_RSA_WITH_3DES_EDE_CBC_SHA     = 0x0016;
-
-    public final static int SSL3_DH_ANON_EXPORT_WITH_RC4_40_MD5    = 0x0017;
-    public final static int SSL3_DH_ANON_WITH_RC4_128_MD5          = 0x0018;
-    public final static int SSL3_DH_ANON_EXPORT_WITH_DES40_CBC_SHA = 0x0019;
-    public final static int SSL3_DH_ANON_WITH_DES_CBC_SHA          = 0x001a;
-    public final static int SSL3_DH_ANON_WITH_3DES_EDE_CBC_SHA     = 0x001b;
-
-    /**
-     * @deprecated As of NSS 3.11, FORTEZZA is no longer supported.
-     * SSL3_FORTEZZA_DMS_WITH_NULL_SHA, SSL3_FORTEZZA_DMS_WITH_RC4_128_SHA
-     * and SSL3_FORTEZZA_DMS_WITH_FORTEZZA_CBC_SHA are placeholders for
-     * backward compatibility.
-     */
-    public final static int SSL3_FORTEZZA_DMS_WITH_NULL_SHA        = 0x001c;
-    public final static int SSL3_FORTEZZA_DMS_WITH_FORTEZZA_CBC_SHA= 0x001d;
-    public final static int SSL3_FORTEZZA_DMS_WITH_RC4_128_SHA     = 0x001e;
-
-    public final static int SSL_RSA_FIPS_WITH_3DES_EDE_CBC_SHA     = 0xfeff;
-    public final static int SSL_RSA_FIPS_WITH_DES_CBC_SHA          = 0xfefe;
-
-    public final static int TLS_RSA_EXPORT1024_WITH_DES_CBC_SHA    = 0x0062;
-    public final static int TLS_RSA_EXPORT1024_WITH_RC4_56_SHA     = 0x0064;
- 
-    public final static int TLS_DHE_DSS_EXPORT1024_WITH_DES_CBC_SHA = 0x0063;
-    public final static int TLS_DHE_DSS_EXPORT1024_WITH_RC4_56_SHA  = 0x0065;
-    public final static int TLS_DHE_DSS_WITH_RC4_128_SHA            = 0x0066;
-
-// New TLS cipher suites in NSS 3.4 
-    public final static int TLS_RSA_WITH_AES_128_CBC_SHA          =  0x002F;
-    public final static int TLS_DH_DSS_WITH_AES_128_CBC_SHA       =  0x0030;
-    public final static int TLS_DH_RSA_WITH_AES_128_CBC_SHA       =  0x0031;
-    public final static int TLS_DHE_DSS_WITH_AES_128_CBC_SHA      =  0x0032;
-    public final static int TLS_DHE_RSA_WITH_AES_128_CBC_SHA      =  0x0033;
-    public final static int TLS_DH_ANON_WITH_AES_128_CBC_SHA      =  0x0034;
-
-    public final static int TLS_RSA_WITH_AES_256_CBC_SHA          =  0x0035;
-    public final static int TLS_DH_DSS_WITH_AES_256_CBC_SHA       =  0x0036;
-    public final static int TLS_DH_RSA_WITH_AES_256_CBC_SHA       =  0x0037;
-    public final static int TLS_DHE_DSS_WITH_AES_256_CBC_SHA      =  0x0038;
-    public final static int TLS_DHE_RSA_WITH_AES_256_CBC_SHA      =  0x0039;
-    public final static int TLS_DH_ANON_WITH_AES_256_CBC_SHA      =  0x003a;
-    public final static int TLS_RSA_WITH_NULL_SHA256              =  0x003b;
-    public final static int TLS_RSA_WITH_AES_128_CBC_SHA256       =  0x003c;
-    public final static int TLS_RSA_WITH_AES_256_CBC_SHA256       =  0x003d;
-
-    public final static int TLS_RSA_WITH_CAMELLIA_128_CBC_SHA     =  0x0041;
-    public final static int TLS_DH_DSS_WITH_CAMELLIA_128_CBC_SHA  =  0x0042;
-    public final static int TLS_DH_RSA_WITH_CAMELLIA_128_CBC_SHA  =  0x0043;
-    public final static int TLS_DHE_DSS_WITH_CAMELLIA_128_CBC_SHA =  0x0044;
-    public final static int TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA =  0x0045;
-    public final static int TLS_DH_ANON_WITH_CAMELLIA_128_CBC_SHA =  0x0046;
-
-    public final static int TLS_DHE_RSA_WITH_AES_128_CBC_SHA256   =  0x0067;
-    public final static int TLS_DHE_RSA_WITH_AES_256_CBC_SHA256   =  0x006b;
-
-    public final static int TLS_RSA_WITH_CAMELLIA_256_CBC_SHA     =  0x0084;
-    public final static int TLS_DH_DSS_WITH_CAMELLIA_256_CBC_SHA  =  0x0085;
-    public final static int TLS_DH_RSA_WITH_CAMELLIA_256_CBC_SHA  =  0x0086;
-    public final static int TLS_DHE_DSS_WITH_CAMELLIA_256_CBC_SHA =  0x0087;
-    public final static int TLS_DHE_RSA_WITH_CAMELLIA_256_CBC_SHA =  0x0088;
-    public final static int TLS_DH_ANON_WITH_CAMELLIA_256_CBC_SHA =  0x0089;
-
-    public final static int TLS_RSA_WITH_SEED_CBC_SHA             =  0x0096;
-
-    public final static int TLS_RSA_WITH_AES_128_GCM_SHA256       =  0x009c;
-    public final static int TLS_DHE_RSA_WITH_AES_128_GCM_SHA256   =  0x009e;
-    public final static int TLS_DHE_DSS_WITH_AES_128_GCM_SHA256   =  0x00A2;
-
-    public final static int TLS_ECDH_ECDSA_WITH_NULL_SHA          =  0xc001;
-    public final static int TLS_ECDH_ECDSA_WITH_RC4_128_SHA       =  0xc002;
-    public final static int TLS_ECDH_ECDSA_WITH_3DES_EDE_CBC_SHA  =  0xc003;
-    public final static int TLS_ECDH_ECDSA_WITH_AES_128_CBC_SHA   =  0xc004;
-    public final static int TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA   =  0xc005;
-
-    public final static int TLS_ECDHE_ECDSA_WITH_NULL_SHA         =  0xc006;
-    public final static int TLS_ECDHE_ECDSA_WITH_RC4_128_SHA      =  0xc007;
-    public final static int TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA =  0xc008;
-    public final static int TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA  =  0xc009;
-    public final static int TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA  =  0xc00a;
-
-    public final static int TLS_ECDH_RSA_WITH_NULL_SHA            =  0xc00b;
-    public final static int TLS_ECDH_RSA_WITH_RC4_128_SHA         =  0xc00c;
-    public final static int TLS_ECDH_RSA_WITH_3DES_EDE_CBC_SHA    =  0xc00d;
-    public final static int TLS_ECDH_RSA_WITH_AES_128_CBC_SHA     =  0xc00e;
-    public final static int TLS_ECDH_RSA_WITH_AES_256_CBC_SHA     =  0xc00f;
-
-    public final static int TLS_ECDHE_RSA_WITH_NULL_SHA           =  0xc010;
-    public final static int TLS_ECDHE_RSA_WITH_RC4_128_SHA        =  0xc011;
-    public final static int TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA   =  0xc012;
-    public final static int TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA    =  0xc013;
-    public final static int TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA    =  0xc014;
-
-    public final static int TLS_ECDH_anon_WITH_NULL_SHA           =  0xc015;
-    public final static int TLS_ECDH_anon_WITH_RC4_128_SHA        =  0xc016;
-    public final static int TLS_ECDH_anon_WITH_3DES_EDE_CBC_SHA   =  0xc017;
-    public final static int TLS_ECDH_anon_WITH_AES_128_CBC_SHA    =  0xc018;
-    public final static int TLS_ECDH_anon_WITH_AES_256_CBC_SHA    =  0xc019;
-
-    public final static int TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256 = 0xc023;
-    public final static int TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256 =  0xc027;
-    public final static int TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 = 0xc02b;
-    public final static int TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256  = 0xc02D;
-    public final static int TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 =  0xc02f;
-    public final static int TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256    = 0xc031;
 }
-

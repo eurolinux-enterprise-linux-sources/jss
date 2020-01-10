@@ -24,16 +24,16 @@
 JNIEXPORT jobject JNICALL
 Java_org_mozilla_jss_pkcs11_PK11Cipher_initContext
     (JNIEnv *env, jclass clazz, jboolean encrypt, jobject keyObj,
-        jobject algObj, jbyteArray ivBA)
+        jobject algObj, jbyteArray ivBA, jboolean padded)
 {
     return Java_org_mozilla_jss_pkcs11_PK11Cipher_initContextWithKeyBits
-        ( env, clazz, encrypt, keyObj, algObj, ivBA, 0);
+        ( env, clazz, encrypt, keyObj, algObj, ivBA, 0, padded);
 }
 
 JNIEXPORT jobject JNICALL
 Java_org_mozilla_jss_pkcs11_PK11Cipher_initContextWithKeyBits
     (JNIEnv *env, jclass clazz, jboolean encrypt, jobject keyObj,
-        jobject algObj, jbyteArray ivBA, jint keyBits)
+        jobject algObj, jbyteArray ivBA, jint keyBits, jboolean padded)
 {
     CK_MECHANISM_TYPE mech;
     PK11SymKey *key=NULL;
@@ -52,6 +52,9 @@ Java_org_mozilla_jss_pkcs11_PK11Cipher_initContextWithKeyBits
             " PKCS #11 mechanism");
         goto finish;
     }
+
+    if (padded)
+        mech = PK11_GetPadMechanism(mech);
 
     /* get operation type */
     if( encrypt ) {
@@ -152,7 +155,9 @@ Java_org_mozilla_jss_pkcs11_PK11Cipher_updateContext
     /* do the operation */
     if( PK11_CipherOp(context, outbuf, (int*)&outlen, outlen,
             (unsigned char*)inbuf, inlen) != SECSuccess) {
-        JSS_throwMsg(env, TOKEN_EXCEPTION, "Cipher Operation failed");
+        JSS_throwMsgPrErrArg(
+            env, TOKEN_EXCEPTION, "Cipher context update failed",
+            PR_GetError());
         goto finish;
     }
     PR_ASSERT(outlen >= 0);
@@ -209,7 +214,9 @@ Java_org_mozilla_jss_pkcs11_PK11Cipher_finalizeContext
     /* perform the finalization */
     status = PK11_DigestFinal(context, outBuf, &newOutLen, outLen);
     if( (status != SECSuccess) ) {
-        JSS_throwMsg(env, TOKEN_EXCEPTION, "Cipher operation failed on token");
+        JSS_throwMsgPrErrArg(
+            env, TOKEN_EXCEPTION, "Cipher context finalization failed",
+            PR_GetError());
         goto finish;
     }
 

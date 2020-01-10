@@ -18,6 +18,9 @@ import java.io.*;
  *      sharedSecret    OCTET STRING OPTIONAL,
  *      comment         UTF8String OPTIONAL }
  * </pre>
+ * For maintenance and conformance reasons, this code has been brought
+ * over and renamed to cmc/RevokeRequest during the CMC update to rfc 5272.
+ * All new code should use cmc/RevokeRequest instead
  */
 public class RevRequest implements ASN1Value {
 

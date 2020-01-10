@@ -15,8 +15,8 @@ Fixes https://pagure.io/jss/issue/4
 
 diff --git a/org/mozilla/jss/ssl/SSLCipher.java b/org/mozilla/jss/ssl/SSLCipher.java
 index 30acdd7..278126b 100644
---- a/org/mozilla/jss/ssl/SSLCipher.java
-+++ b/org/mozilla/jss/ssl/SSLCipher.java
+--- a/jss/org/mozilla/jss/ssl/SSLCipher.java
++++ b/jss/org/mozilla/jss/ssl/SSLCipher.java
 @@ -258,8 +258,11 @@ public enum SSLCipher {
      TLS_RSA_WITH_SEED_CBC_SHA                    (0x0096),
  
@@ -47,8 +47,8 @@ index 30acdd7..278126b 100644
      private int id;
 diff --git a/org/mozilla/jss/ssl/SSLSocket.java b/org/mozilla/jss/ssl/SSLSocket.java
 index 0dd39fd..e104d3c 100644
---- a/org/mozilla/jss/ssl/SSLSocket.java
-+++ b/org/mozilla/jss/ssl/SSLSocket.java
+--- a/jss/org/mozilla/jss/ssl/SSLSocket.java
++++ b/jss/org/mozilla/jss/ssl/SSLSocket.java
 @@ -268,8 +268,11 @@ public class SSLSocket extends java.net.Socket {
      public final static int TLS_RSA_WITH_SEED_CBC_SHA                    = 0x0096;
  
@@ -79,8 +79,8 @@ index 0dd39fd..e104d3c 100644
      /*
 diff --git a/org/mozilla/jss/tests/Constants.java b/org/mozilla/jss/tests/Constants.java
 index e613034..d79ad72 100755
---- a/org/mozilla/jss/tests/Constants.java
-+++ b/org/mozilla/jss/tests/Constants.java
+--- a/jss/org/mozilla/jss/tests/Constants.java
++++ b/jss/org/mozilla/jss/tests/Constants.java
 @@ -142,8 +142,15 @@ public interface Constants {
  /*77*/  new cipher(SSLSocket.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256, "TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256"),
  /*78*/  new cipher(SSLSocket.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256, "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"),
@@ -101,8 +101,8 @@ index e613034..d79ad72 100755
      /** Cipher supported by JSSE (JDK 1.5.x) */
 diff --git a/org/mozilla/jss/tests/SSLClientAuth.java b/org/mozilla/jss/tests/SSLClientAuth.java
 index e1c6163..b656b82 100644
---- a/org/mozilla/jss/tests/SSLClientAuth.java
-+++ b/org/mozilla/jss/tests/SSLClientAuth.java
+--- a/jss/org/mozilla/jss/tests/SSLClientAuth.java
++++ b/jss/org/mozilla/jss/tests/SSLClientAuth.java
 @@ -148,6 +148,8 @@ public class SSLClientAuth implements Runnable {
              
          }
@@ -163,5 +163,5 @@ index e1c6163..b656b82 100644
      private void testConnection() throws Exception {
          serverReady = false;
 -- 
-1.8.3.1
+2.14.4
 

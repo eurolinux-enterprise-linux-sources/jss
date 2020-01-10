@@ -1,0 +1,15 @@
+diff --git a/build_java.pl b/build_java.pl
+index 78cc5fd0..b74a9338 100644
+--- a/jss/build_java.pl
++++ b/jss/build_java.pl
+@@ -162,8 +162,9 @@ sub setup_vars {
+     }
+     $jni_header_dir = "$dist_dir/private/jss/_jni";
+ 
++    $classpath = "-classpath /usr/share/java/apache-commons-codec.jar:/usr/share/java/commons-lang.jar:/usr/share/java/ldapjdk.jar:";
+     if( $jce_jar ) {
+-        $classpath = "-classpath $jce_jar";
++        $classpath .= ":$jce_jar";
+     }
+ 
+     # retrieve present working directory

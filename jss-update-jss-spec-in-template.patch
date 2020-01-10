@@ -1,0 +1,63 @@
+From 56979bf6b22a81355fe948d3c28ec78d925db1d8 Mon Sep 17 00:00:00 2001
+From: Jack Magne <jmagne@redhat.com>
+Date: Thu, 21 Jun 2018 22:18:38 -0600
+Subject: [PATCH] Update dependencies in 'jss.spec.in' template
+
+---
+ jss.spec.in | 27 ++++++++++++++++++++++-----
+ 1 file changed, 22 insertions(+), 5 deletions(-)
+
+diff --git a/jss.spec.in b/jss.spec.in
+index f1e629f2..4a240138 100644
+--- a/jss/jss.spec.in
++++ b/jss/jss.spec.in
+@@ -10,13 +10,22 @@ Version:        4.4.4
+ Release:        1%{?_timestamp}%{?_commit_id}%{?dist}
+ 
+ # To generate the source tarball:
+-#
+-# git clone https://github.com/dogtagpki/jss.git
+-# cd jss
+-# git archive --format=tar.gz --prefix jss-VERSION/jss/ -o jss-VERSION.tar.gz -v HEAD
+-#
++# $ git clone https://github.com/dogtagpki/jss.git
++# $ cd jss
++# $ git archive \
++#     --format=tar.gz \
++#     --prefix jss-VERSION/jss/ \
++#     -o jss-VERSION.tar.gz \
++#     <version tag>
+ Source:         https://github.com/dogtagpki/%{name}/archive/v%{version}/%{name}-%{version}.tar.gz
+ 
++# To create a patch for all changes since a version tag:
++# $ git format-patch \
++#     --stdout \
++#     <version tag> \
++#     > jss-VERSION-RELEASE.patch
++# Patch: jss-VERSION-RELEASE.patch
++
+ Conflicts:      idm-console-framework < 1.1.17-4
+ Conflicts:      pki-base < 10.4.0
+ Conflicts:      tomcatjss < 7.2.1
+@@ -31,10 +40,18 @@ BuildRequires:  jpackage-utils
+ %if 0%{?fedora} >= 25 || 0%{?rhel} > 7
+ BuildRequires:  perl-interpreter
+ %endif
++BuildRequires:  apache-commons-lang
++BuildRequires:  apache-commons-codec
++BuildRequires:  ldapjdk
++
+ 
+ Requires:       nss >= 3.28.4-6
+ Requires:       java-headless
+ Requires:       jpackage-utils
++Requires:       apache-commons-lang
++Requires:       apache-commons-codec
++Requires:       ldapjdk
++
+ 
+ %description
+ Java Security Services (JSS) is a java native interface which provides a bridge
+-- 
+2.14.4
+

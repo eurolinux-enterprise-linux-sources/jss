@@ -16,8 +16,8 @@ fixes https://pagure.io/jss/issue/12
 
 diff --git a/org/mozilla/jss/pkix/primitive/AlgorithmIdentifier.java b/org/mozilla/jss/pkix/primitive/AlgorithmIdentifier.java
 index 0662f76..3487707 100644
---- a/org/mozilla/jss/pkix/primitive/AlgorithmIdentifier.java
-+++ b/org/mozilla/jss/pkix/primitive/AlgorithmIdentifier.java
+--- a/jss/org/mozilla/jss/pkix/primitive/AlgorithmIdentifier.java
++++ b/jss/org/mozilla/jss/pkix/primitive/AlgorithmIdentifier.java
 @@ -103,19 +103,8 @@ public static class Template implements ASN1Template {
          Assert._assert( seq.size() == 2 );
  
@@ -40,5 +40,5 @@ index 0662f76..3487707 100644
                  algOID  // OID
              );
 -- 
-1.8.3.1
+2.14.4
 

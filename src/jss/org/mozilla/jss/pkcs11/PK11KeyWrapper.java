@@ -4,6 +4,8 @@
 
 package org.mozilla.jss.pkcs11;
 
+import java.util.Arrays;
+
 import org.mozilla.jss.crypto.*;
 import java.security.spec.AlgorithmParameterSpec;
 import java.security.InvalidAlgorithmParameterException;
@@ -394,6 +396,11 @@ final class PK11KeyWrapper implements KeyWrapper {
         }
 
         byte[] publicValue = extractPublicValue(publicKey, type);
+        /* If first byte is null, omit it.
+         * It can be null due to how BigInteger.toByteArray() is specified. */
+        if (publicValue.length > 0 && publicValue[0] == 0) {
+            publicValue = Arrays.copyOfRange(publicValue, 1, publicValue.length);
+        }
 
         if( symKey != null ) {
             Assert._assert(pubKey==null && privKey==null);
@@ -588,6 +595,8 @@ final class PK11KeyWrapper implements KeyWrapper {
             return EncryptionAlgorithm.RC4;
         } else if( type == SymmetricKey.AES ) {
             return EncryptionAlgorithm.AES_128_ECB;
+        } else if( type == SymmetricKey.SHA1_HMAC) {
+            return HMACAlgorithm.SHA1;
         } else  {
             Assert._assert( type == SymmetricKey.RC2 );
             return EncryptionAlgorithm.RC2_CBC;
